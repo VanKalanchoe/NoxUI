@@ -1,0 +1,128 @@
+#pragma once
+
+#include <cstdint>
+#include <string>
+#include <string_view>
+#include <vector>
+
+#include "NoxUI/Core/UIElement.h"
+#include "NoxUI/Core/UIPlatform.h"
+#include "NoxUI/Core/UIRef.h"
+#include "NoxUI/Core/UITheme.h"
+
+namespace NoxUI
+{
+    class UIDrawList;
+
+    // Owns a viewport's retained UIElement tree, routes input (hit-testing, capture, focus, bubbling),
+    // and drives 2-pass layout + style transitions + painting.
+    class UIContext
+    {
+    public:
+        UIContext();
+
+        static UIContext* GetCurrent() { return s_Current; }
+
+        void SetRoot(const Ref<UIElement>& root);
+        const Ref<UIElement>& GetRoot() const { return m_Root; }
+
+        void SetOverlay(const Ref<UIElement>& overlay);
+        const Ref<UIElement>& GetOverlay() const { return m_Overlay; }
+        void ClearOverlay() { SetOverlay(nullptr); }
+
+        void PushToast(std::string message, float durationSeconds = 3.0f, const UIColor& accentColor = { 0.24f, 0.56f, 0.96f, 1.0f });
+        // A toast with a severity (its icon and colour), a title and an optional detail line. A click on it dismisses it; the
+        // pointer resting on it keeps it. At most five are shown, the newest at the bottom.
+        void PushNotification(UINotification notification);
+        // Space kept free under the toasts (a status bar at the bottom of the window).
+        void SetToastBottomInset(float pixels) { m_ToastBottomInset = pixels; }
+
+        void SetTheme(const Ref<UITheme>& theme);
+        const Ref<UITheme>& GetTheme() const { return m_Theme; }
+
+        void SetPlatformCallbacks(UIPlatformCallbacks callbacks) { m_PlatformCallbacks = std::move(callbacks); }
+        const UIPlatformCallbacks& GetPlatformCallbacks() const { return m_PlatformCallbacks; }
+        void CaptureMouse(bool capture) const
+        {
+            if (m_PlatformCallbacks.CaptureMouse)
+                m_PlatformCallbacks.CaptureMouse(capture);
+        }
+
+        // Platform-agnostic input injection (called by noxui_impl_sdl3 or custom platform loop)
+        bool OnPointerMove(const UIVec2& pos);
+        bool OnPointerDown(const UIVec2& pos, int button);
+        bool OnPointerDown(int button) { return OnPointerDown(m_LastMousePos, button); }
+        bool OnPointerUp(const UIVec2& pos, int button);
+        bool OnPointerUp(int button) { return OnPointerUp(m_LastMousePos, button); }
+        bool OnScroll(const UIVec2& scrollDelta);
+        bool OnKeyDown(UIKey key, uint16_t mods, bool repeat = false) { return OnKeyDown(static_cast<int>(key), mods, repeat); }
+        bool OnKeyDown(int keyCode, uint16_t mods, bool repeat = false);
+        void OnKeyUp(UIKey key, uint16_t mods) { (void)key; m_Modifiers = mods; }
+        void SetModifiers(uint16_t mods) { m_Modifiers = mods; }
+        uint16_t GetModifiers() const { return m_Modifiers; }
+        bool OnTextInput(std::string_view text);
+
+        void UpdateAndRender(UIDrawList& drawList, const UIVec2& viewportSize, float dt);
+
+        UIElement* GetHovered() const { return m_Hovered.get(); }
+        UIElement* GetFocused() const { return m_Focused.get(); }
+        void SetFocus(UIElement* element);
+        void SetPointerCapture(const Ref<UIElement>& element);
+        void ReleasePointerCapture();
+        // The press just dispatched is the element's own drag (a scroll bar's thumb, a number field's scrub): it must not
+        // turn into a drag-and-drop of an ancestor's payload once the pointer moved far enough.
+        void CancelPendingDrag() { m_DragPending = false; }
+        // The size of the viewport the context was last laid out in (popups clamp to it).
+        const UIVec2& GetViewportSize() const { return m_ViewportSize; }
+        const UIVec2& GetLastMousePos() const { return m_LastMousePos; }
+        bool IsDragging() const { return m_DragActive; }
+        const UIDragPayload& GetDragPayload() const { return m_ActivePayload; }
+
+    private:
+        bool IsInTree(const UIElement* element) const;
+        void DropDetachedInput();
+        void UpdateHover(const UIVec2& pos);
+        void UpdateSystemCursor(const UIVec2& pos) const;
+        bool DispatchPointerMove(const UIVec2& pos);
+        bool DispatchPointerDown(const UIVec2& pos, int button);
+        bool DispatchPointerUp(const UIVec2& pos, int button);
+        bool DispatchScroll(const UIVec2& scrollDelta);
+        bool DispatchKeyDown(int keyCode, uint16_t mods, bool repeat);
+        bool DispatchTextInput(std::string_view text);
+
+        Ref<UIElement> m_Root;
+        Ref<UIElement> m_Overlay;
+        Ref<UITheme> m_Theme;
+        UIPlatformCallbacks m_PlatformCallbacks{};
+
+        inline static UIContext* s_Current = nullptr;
+
+        Ref<UIElement> m_Hovered;
+        Ref<UIElement> m_Captured;
+        Ref<UIElement> m_Focused;
+
+        UIVec2 m_LastMousePos{ 0.0f, 0.0f };
+        UIVec2 m_ViewportSize{ 0.0f, 0.0f };
+        uint16_t m_Modifiers = 0;
+        float m_HoverTime = 0.0f;
+
+        bool m_DragPending = false;
+        bool m_DragActive = false;
+        UIVec2 m_DragOrigin{ 0.0f, 0.0f };
+        UIDragPayload m_ActivePayload{};
+
+        struct ToastItem
+        {
+            UINotification Note;
+            float Remaining = 3.0f;
+            float Age = 0.0f;     // seconds shown (fade / slide in)
+            bool HasAccent = false;
+            UIColor Accent{ 0.24f, 0.56f, 0.96f, 1.0f };
+            UIRect Bounds{};      // where it was drawn last frame (clicks)
+        };
+        void PaintToasts(UIDrawList& drawList, const UIVec2& viewportSize, float dt);
+        bool DismissToastAt(const UIVec2& pos);
+        std::vector<ToastItem> m_Toasts;
+        float m_ToastBottomInset = 0.0f;
+    };
+}
