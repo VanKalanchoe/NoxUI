@@ -1,0 +1,312 @@
+# Nox::UI Theme (.nstyle) - Live hot-reloaded by NOXWatcher
+tokens:
+  Background: "#10131B"
+  Surface0: "#181C26FF"
+  Surface1: "#202533FF"
+  Surface2: "#2A3144FF"
+  Border: "#333C52FF"
+  Accent: "#4287F5"
+  AccentHover: "#5997F9"
+  Success: "#3CAD7B"
+  Warning: "#D99D39"
+  Danger: "#D54F55"
+  Text: "#EAEDF3"
+  TextMuted: "#949DAF"
+
+styles:
+  Background:
+    fill: "$Background"
+    border_thickness: 0
+    shadow_blur: 0
+    corner_radius: 0
+    padding: 0
+
+  Surface:
+    fill: "$Surface0"
+    border_thickness: 0
+    shadow_blur: 0
+    corner_radius: 0
+    padding: 0
+    text_color: "$Text"
+    font_size: 18
+
+  Label:
+    text_color: "$Text"
+    font_size: 18
+
+  Panel:
+    fill: "$Surface0"
+    border_color: "$Border"
+    border_thickness: 1.0
+    shadow_color: "#00000040"
+    shadow_offset: [0, 3]
+    shadow_blur: 8
+    corner_radius: 3
+    padding: 10
+    text_color: "$Text"
+    font_size: 18
+
+  Card:
+    fill: "$Surface1"
+    border_color: "$Border"
+    border_thickness: 1.0
+    corner_radius: 4
+    padding: 8
+    text_color: "$Text"
+    font_size: 18
+
+  TopBar:
+    fill: "$Surface0"
+    border_color: "$Border"
+    border_thickness: 1.0
+    shadow_color: "#00000040"
+    shadow_offset: [0, 2]
+    shadow_blur: 6
+    corner_radius: 4
+    padding: [12, 6]
+
+  Button:
+    fill: "$Surface1"
+    border_color: "$Border"
+    border_thickness: 1.0
+    corner_radius: 4
+    padding: [10, 5]
+    text_color: "$Text"
+    font_size: 18
+    transition_ms: 80
+
+  "Button:hover":
+    fill: "$Surface2"
+    border_color: "$Accent"
+    text_color: "#FFFFFF"
+
+  "Button:pressed":
+    fill: "#2A4E8C"
+    border_color: "$AccentHover"
+
+  "Button:disabled":
+    fill: "#161A24"
+    border_color: "#272D3D"
+    text_color: "$TextMuted"
+
+  "Button.primary":
+    fill: "$Accent"
+    border_color: "$AccentHover"
+    text_color: "#FFFFFF"
+
+  "Button.primary:hover":
+    fill: "$AccentHover"
+    border_color: "#FFFFFF55"
+
+  "Button.primary:pressed":
+    fill: "#2F66BD"
+
+  "Button.primary:disabled":
+    fill: "#233554"
+    border_color: "#2F456E"
+    text_color: "#9AA8C2"
+
+  CheckBox:
+    fill: "#131620"
+    border_color: "$Border"
+    border_thickness: 1.0
+    corner_radius: 3
+    text_color: "$Text"
+    font_size: 18
+
+  "CheckBox:hover":
+    border_color: "$Accent"
+
+  Slider:
+    fill: "#131620"
+    border_color: "$Border"
+    text_color: "$TextMuted"
+    font_size: 18
+
+  DragScalar:
+    fill: "#131620"
+    border_color: "$Border"
+    border_thickness: 1.0
+    corner_radius: 3
+    padding: [6, 4]
+    text_color: "$Text"
+    font_size: 18
+
+  "DragScalar:hover":
+    border_color: "$Accent"
+
+  "DragScalar:focus":
+    border_color: "$AccentHover"
+
+  TextInput:
+    fill: "#131620"
+    border_color: "$Border"
+    border_thickness: 1.0
+    corner_radius: 3
+    padding: [8, 5]
+    text_color: "$Text"
+    font_size: 18
+
+  "TextInput:hover":
+    border_color: "#4B5878"
+
+  "TextInput:focus":
+    fill: "#151A28"
+    border_color: "$Accent"
+
+  TreeView:
+    fill: "$Surface0"
+    border_color: "$Border"
+    border_thickness: 1.0
+    corner_radius: 3
+    text_color: "$Text"
+    font_size: 18
+
+  SectionHeader:
+    fill: "$Surface1"
+    border_color: "$Border"
+    border_thickness: 1.0
+    corner_radius: 3
+    padding: [10, 4]
+    text_color: "$Text"
+    font_size: 18
+
+  "SectionHeader:hover":
+    fill: "$Surface2"
+    border_color: "$Accent"
+
+  TabBar:
+    fill: "$Surface0"
+    border_color: "$Border"
+    border_thickness: 1.0
+    corner_radius: 0
+    padding: [6, 4, 6, 0]
+
+  Tab:
+    fill: "#151923"
+    border_color: "#00000000"
+    border_thickness: 1.0
+    corner_radius: [3, 3, 0, 0]
+    padding: [12, 5]
+    text_color: "$TextMuted"
+    font_size: 18
+
+  "Tab:hover":
+    fill: "$Surface1"
+    text_color: "$Text"
+
+  "Tab.active":
+    fill: "#2A4975"
+    border_color: "$Accent"
+    text_color: "#FFFFFF"
+
+  MenuBar:
+    fill: "$Surface0"
+    border_color: "$Border"
+    border_thickness: 1.0
+    corner_radius: 0
+    padding: [6, 2]
+
+  MenuTrigger:
+    fill: "#00000000"
+    border_thickness: 0
+    corner_radius: 2
+    padding: [10, 4]
+    text_color: "$Text"
+    font_size: 18
+
+  "MenuTrigger:hover":
+    fill: "$Surface2"
+    text_color: "#FFFFFF"
+
+  MenuPopup:
+    fill: "$Surface1"
+    border_color: "$Border"
+    border_thickness: 1.0
+    shadow_color: "#0000008C"
+    shadow_offset: [0, 6]
+    shadow_blur: 14
+    corner_radius: 3
+    padding: 4
+
+  MenuItem:
+    fill: "#00000000"
+    border_thickness: 0
+    corner_radius: 2
+    padding: [10, 5]
+    text_color: "$Text"
+    font_size: 18
+
+  "MenuItem:hover":
+    fill: "$Accent"
+    text_color: "#FFFFFF"
+
+  "MenuItem:disabled":
+    text_color: "$TextMuted"
+
+  Tooltip:
+    fill: "$Surface1"
+    border_color: "$Border"
+    border_thickness: 1.0
+    shadow_color: "#0000008C"
+    shadow_offset: [0, 6]
+    shadow_blur: 14
+    corner_radius: 3
+    padding: [10, 6]
+    text_color: "$Text"
+    font_size: 18
+
+  TemplateCard:
+    fill: "$Surface1"
+    border_color: "$Border"
+    border_thickness: 1.5
+    corner_radius: 6
+    padding: 8
+    text_color: "$Text"
+    font_size: 18
+    transition_ms: 80
+
+  "TemplateCard:hover":
+    fill: "$Surface2"
+    border_color: "$Accent"
+
+  "TemplateCard.selected":
+    fill: "#1F2E47"
+    border_color: "$AccentHover"
+    border_thickness: 2.0
+
+  "TemplateCard.selected:hover":
+    fill: "#243654"
+    border_color: "$AccentHover"
+
+  Separator:
+    fill: "$Border"
+    corner_radius: 0
+
+  ViewportSlot:
+    fill: "$Background"
+    border_color: "$Border"
+    border_thickness: 1.0
+    corner_radius: 4
+
+  NodeGraph:
+    fill: "$Background"
+    border_color: "$Border"
+    border_thickness: 1.0
+
+  TitleClose:
+    fill: "#00000000"
+    border_thickness: 0
+    corner_radius: 0
+    padding: 0
+    text_color: "$TextMuted"
+    font_size: 16
+    transition_ms: 50
+
+  "TitleClose:hover":
+    fill: "$Danger"
+    text_color: "#FFFFFF"
+
+  "TitleClose:pressed":
+    fill: "#AE3840"
+    text_color: "#FFFFFF"

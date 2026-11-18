@@ -1,0 +1,31 @@
+# Build directories
+/build/
+/build_*/
+/out/
+
+# IDE / Editor caches
+/.vs/
+/.vscode/
+/.cache/
+*.sln
+*.slnx
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+
+# Populated by scripts/install_dependencies.bat
+/vendors/*
+!/vendors/.gitkeep
+
+# Runtime shader caches & compiled binaries
+shader_cache*/
+imgui.ini
+HANDOFF.md
+*.bin
+*.pdb
+*.ilk
+*.obj
+*.lib
+*.dll
+*.exe
+*.exp
