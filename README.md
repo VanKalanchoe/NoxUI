@@ -1,6 +1,8 @@
 # NoxUI
 
-A standalone C++20 retained-mode SDF UI library with an optional **SDL3** platform backend (`noxui_impl_sdl3.h`) and **NoxRHI** renderer backend (`noxui_impl_noxrhi.h` supporting **Vulkan**, **Direct3D 12**, and **`NRI_GRAPHICS_API_NONE`**).
+[![CI](https://github.com/VanKalanchoe/NoxUI/actions/workflows/ci.yml/badge.svg)](https://github.com/VanKalanchoe/NoxUI/actions/workflows/ci.yml)
+
+A standalone C++20 retained-mode SDF UI library with an optional **SDL3** platform backend (`noxui_impl_sdl3.h`) and **[NoxRHI](https://github.com/VanKalanchoe/NoxRHI)** renderer backend (`noxui_impl_noxrhi.h` supporting **Vulkan**, **Direct3D 12**, and **`NRI_GRAPHICS_API_NONE`**).
 
 Core `NoxUI` has **zero** Dear ImGui, SDL3, or GPU SDK dependencies. It performs two-pass declarative layout (`Measure` + `Arrange`), `.nstyle` YAML theme styling with smooth transitions, MSDF font atlas generation (`msdf-atlas-gen`), docking (`UIDockSpace`), and emits backend-agnostic `UIDrawList` primitives (`UIPrimitive` & `UIClipRect`).
 
@@ -21,6 +23,52 @@ Core `NoxUI` has **zero** Dear ImGui, SDL3, or GPU SDK dependencies. It performs
 
 ---
 
+## Quick Integration Example
+
+```cpp
+#include <NoxUI/NoxUI.h>
+#include <NoxUI/Backends/noxui_impl_sdl3.h>
+#include <NoxUI/Backends/noxui_impl_noxrhi.h>
+
+// 1. Initialize UIContext, Theme, and Backends
+NoxUI::UIContext uiContext;
+auto theme = NoxUI::UITheme::CreateDefault();
+theme->LoadFromFile("assets/themes/DefaultDark.nstyle");
+uiContext.SetTheme(theme);
+
+NoxUI_ImplSDL3_Init(window, uiContext);
+NoxUI_ImplNoxRHI_Init({
+    .device = &device,
+    .resourceHeap = &resourceHeap,
+    .samplerHeap = &samplerHeap,
+    .colorFormat = NRI_FORMAT_SURFACE,
+    .framesInFlight = 2
+});
+
+// 2. Build Declarative Retained UI Tree
+using namespace NoxUI;
+uiContext.SetRoot(
+    VStack(10.0f, {
+        Card("Scene Controls", {
+            Label("Retained-mode SDF UI on NoxRHI"),
+            Button("Save Scene", [&]() { uiContext.PushToast("Scene saved"); }).Primary(),
+            Slider(0.75f, 0.0f, 1.0f)
+        }).FillWidth()
+    }).Padding(16.0f).Fill()
+);
+
+// 3. Per-Frame Update + RenderGraph Passes
+NoxUI::UIDrawList drawList;
+NoxUI_ImplSDL3_NewFrame(uiContext);
+uiContext.UpdateAndRender(drawList, { width, height }, dtSeconds);
+
+const NoxUI_NoxRHIDrawData drawData = NoxUI_ImplNoxRHI_PrepareDrawData(drawList, frameSlot);
+// In upload pass:  NoxUI_ImplNoxRHI_CopyData(cmd, drawData);
+// In raster pass:  NoxUI_ImplNoxRHI_RenderDrawData(cmd, drawData);
+```
+
+---
+
 ## Requirements & Dependencies
 
 ### System Prerequisites (Windows)
@@ -33,7 +81,7 @@ Core `NoxUI` has **zero** Dear ImGui, SDL3, or GPU SDK dependencies. It performs
 
 | Dependency | Version | Purpose | Scope | Source |
 |---|---|---|---|---|
-| **NoxRHI** (+ **VMA-Hpp**, **D3D12MA**, **Slang**) | `0.1.0` | Cross-API RHI (Vulkan, D3D12, `DeviceNone`) & `RenderGraph` | `NoxUI::NoxRHI` & `UIDemo` | `vendors/NoxRHI` |
+| **NoxRHI** (+ **VMA-Hpp**, **D3D12MA**, **Slang**) | `0.1.0` | Cross-API RHI (Vulkan, D3D12, `DeviceNone`) & `RenderGraph` | `NoxUI::NoxRHI` & `UIDemo` | [VanKalanchoe/NoxRHI](https://github.com/VanKalanchoe/NoxRHI) |
 | **msdf-atlas-gen** (incl. **msdfgen**) | `v1.4` | Runtime MSDF font atlas generation (`UIFont`) | Private (`NoxUI::Core`) | [Chlumsky/msdf-atlas-gen](https://github.com/Chlumsky/msdf-atlas-gen) |
 | **vcpkg** + **glm** | `1.0.3` (`x64-windows`) | Vector types (`UIVec2`, `UIColor`, `UIPrimitive`) | Public (`NoxUI::Core`) | [g-truc/glm](https://github.com/g-truc/glm) |
 | **yaml-cpp** | `0.9.0` (`x64-windows`) | `.nstyle` theme and dock layout serialization | Private (`NoxUI::Core`) | [jbeder/yaml-cpp](https://github.com/jbeder/yaml-cpp) |
@@ -49,7 +97,7 @@ Core `NoxUI` has **zero** Dear ImGui, SDL3, or GPU SDK dependencies. It performs
 ```bat
 scripts\install_dependencies.bat
 ```
-Clones `msdf-atlas-gen (v1.4)` and bootstraps `vcpkg` (`glm`, `yaml-cpp`, `freetype`, `sdl3`, `stb`) with binary caching in `%TEMP%\vcpkg-cache`.
+Clones `NoxRHI` (plus `VulkanMemoryAllocator-Hpp`, `D3D12MemoryAllocator`, and `Slang 2026.14.1`), `msdf-atlas-gen (v1.4)`, and bootstraps `vcpkg` (`glm`, `yaml-cpp`, `freetype`, `sdl3`, `stb`) with binary caching in `%TEMP%\vcpkg-cache`.
 
 ### 2. Generate the Solution (`.slnx`) for Rider / Visual Studio
 ```bat
@@ -59,8 +107,7 @@ scripts\setup_build.bat
 :: To configure with default MSVC instead of ClangCL:
 scripts\setup_build.bat --msvc
 
-:: To pass custom CMake flags (e.g. custom NoxRHI path or core-only build):
-scripts\setup_build.bat -DNOXRHI_DIR=E:/dev/Modules/NoxRHI
+:: To pass custom CMake flags (e.g. core-only build without SDL3/NoxRHI):
 scripts\setup_build.bat -DNOXUI_BUILD_EXAMPLES=OFF -DNOXUI_BUILD_NOXRHI_BACKEND=OFF -DNOXUI_BUILD_SDL3_BACKEND=OFF
 ```
 
