@@ -18,7 +18,7 @@ option(NOXUI_BUILD_SDL3_BACKEND   "Provide header-only SDL3 platform backend tar
 option(NOXUI_BUILD_NOXRHI_BACKEND "Provide header-only NoxRHI renderer backend target (NoxUI::NoxRHI)" ON)
 option(NOXUI_BUILD_EXAMPLES       "Build standalone NoxUI examples (UIDemo)" ON)
 
-set(NOXRHI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../NoxRHI" CACHE PATH "Path to sibling NoxRHI repository")
+set(NOXRHI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/vendors/NoxRHI" CACHE PATH "Path to NoxRHI repository")
 
 # -----------------------------------------------------------------------------
 # Third-Party Dependencies for Core NoxUI
@@ -113,9 +113,11 @@ if(NOXUI_BUILD_NOXRHI_BACKEND)
     if(NOT TARGET NoxRHI::HPP)
         if(EXISTS "${NOXRHI_DIR}/CMakeLists.txt")
             set(NRI_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+            set(NRI_ENABLE_STREAMLINE OFF CACHE BOOL "" FORCE)
+            set(NRI_ENABLE_NRD OFF CACHE BOOL "" FORCE)
             add_subdirectory("${NOXRHI_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/NoxRHI" EXCLUDE_FROM_ALL)
         else()
-            message(FATAL_ERROR "NoxRHI not found at NOXRHI_DIR='${NOXRHI_DIR}'. Pass -DNOXRHI_DIR=<path> to CMake.")
+            message(FATAL_ERROR "NoxRHI not found at NOXRHI_DIR='${NOXRHI_DIR}'. Run scripts/install_dependencies.bat or pass -DNOXRHI_DIR=<path> to CMake.")
         endif()
     endif()
 

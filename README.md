@@ -28,12 +28,12 @@ Core `NoxUI` has **zero** Dear ImGui, SDL3, or GPU SDK dependencies. It performs
 - **CMake >= 3.25**
 - **Git**, **curl**, and **tar**
 - **Vulkan SDK** (tested with **1.4.350.0**, `VULKAN_SDK` set in environment)
-- **Sibling `NoxRHI` repository** at `../NoxRHI` (or custom path via `-DNOXRHI_DIR=<path>`) when `NOXUI_BUILD_NOXRHI_BACKEND=ON`.
 
 ### Vendored Dependencies (Downloaded into `vendors/` by `scripts\install_dependencies.bat`)
 
 | Dependency | Version | Purpose | Scope | Source |
 |---|---|---|---|---|
+| **NoxRHI** (+ **VMA-Hpp**, **D3D12MA**, **Slang**) | `0.1.0` | Cross-API RHI (Vulkan, D3D12, `DeviceNone`) & `RenderGraph` | `NoxUI::NoxRHI` & `UIDemo` | `vendors/NoxRHI` |
 | **msdf-atlas-gen** (incl. **msdfgen**) | `v1.4` | Runtime MSDF font atlas generation (`UIFont`) | Private (`NoxUI::Core`) | [Chlumsky/msdf-atlas-gen](https://github.com/Chlumsky/msdf-atlas-gen) |
 | **vcpkg** + **glm** | `1.0.3` (`x64-windows`) | Vector types (`UIVec2`, `UIColor`, `UIPrimitive`) | Public (`NoxUI::Core`) | [g-truc/glm](https://github.com/g-truc/glm) |
 | **yaml-cpp** | `0.9.0` (`x64-windows`) | `.nstyle` theme and dock layout serialization | Private (`NoxUI::Core`) | [jbeder/yaml-cpp](https://github.com/jbeder/yaml-cpp) |
@@ -86,4 +86,4 @@ build\Debug\UIDemo.exe --dx12 --frames 5 --screenshot screenshot_dx12.png
 | `NOXUI_BUILD_SDL3_BACKEND` | `ON` | Provide header-only `NoxUI::SDL3` interface target (`noxui_impl_sdl3.h`) |
 | `NOXUI_BUILD_NOXRHI_BACKEND` | `ON` | Provide header-only `NoxUI::NoxRHI` interface target (`noxui_impl_noxrhi.h`) |
 | `NOXUI_BUILD_EXAMPLES` | `ON` | Build standalone `UIDemo` executable |
-| `NOXRHI_DIR` | `../NoxRHI` | Path to the `NoxRHI` repository |
+| `NOXRHI_DIR` | `vendors/NoxRHI` | Path to the `NoxRHI` repository |
