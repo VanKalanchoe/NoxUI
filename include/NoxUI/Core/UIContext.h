@@ -20,6 +20,7 @@ namespace NoxUI
     {
     public:
         UIContext();
+        ~UIContext();
 
         static UIContext* GetCurrent() { return s_Current; }
 
@@ -105,6 +106,8 @@ namespace NoxUI
         UIPlatformCallbacks m_PlatformCallbacks{};
 
         inline static UIContext* s_Current = nullptr;
+        inline static UIContext* s_LastDrawn = nullptr; // (ThemeColor outside a frame or an event)
+        friend UIColor ThemeColor(std::string_view token, const UIColor& fallback);
         inline static uint16_t s_Modifiers = 0;
         inline static uint32_t s_ButtonsHeld = 0;
         std::vector<std::function<void()>> m_Deferred;
@@ -136,5 +139,20 @@ namespace NoxUI
         bool DismissToastAt(const UIVec2& pos);
         std::vector<ToastItem> m_Toasts;
         float m_ToastBottomInset = 0.0f;
+    };
+
+    // A theme token's colour from the theme in use -- the context handling the current event or frame, else the one drawn last (a 3D
+    // overlay painted outside the UI pass) -- or `fallback` when there is none or the theme does not name the token. For colours chosen
+    // in code: nothing looks different without a theme entry, and a theme can change every one of them.
+    UIColor ThemeColor(std::string_view token, const UIColor& fallback);
+
+    // A named colour constant read from the theme each time it is used (ThemeColor): `constexpr UIThemeToken kWarn{ "Warn", {...} };`
+    // then pass kWarn where a UIColor goes.
+    struct UIThemeToken
+    {
+        std::string_view Name;
+        UIColor Fallback;
+        UIColor Get() const { return ThemeColor(Name, Fallback); }
+        operator UIColor() const { return Get(); }
     };
 }
