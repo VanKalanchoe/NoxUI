@@ -30,6 +30,17 @@ namespace NoxUI
 
         UIElement* GetParent() const { return m_Parent; }
         const std::vector<Ref<UIElement>>& GetChildren() const { return m_Children; }
+        // A visible child is under `pos`. A popup's backdrop asks this before it dismisses: a press on the popup's own rows
+        // bubbles up to the backdrop too, and must not close it before the row sees the release.
+        bool AnyChildContains(const UIVec2& pos) const
+        {
+            for (const auto& child : m_Children)
+            {
+                if (child && child->Visible && child->GetBounds().Contains(pos))
+                    return true;
+            }
+            return false;
+        }
 
         // Layout pass (Pass 1: bottom-up Measure, Pass 2: top-down Arrange)
         UIVec2 Measure();
@@ -73,6 +84,9 @@ namespace NoxUI
         UIVec2 MinSize{ 0.0f, 0.0f };
         UIVec2 MaxSize{ 1e6f, 1e6f };
         float FlexWeight = 1.0f;
+        // Disabled with children: drawn under a veil (theme token DisabledVeil), for containers whose children draw themselves
+        // as enabled (a settings row and its checkbox).
+        bool VeilWhenDisabled = false;
 
         UIAlignment HAlign = UIAlignment::Stretch;
         UIAlignment VAlign = UIAlignment::Stretch;

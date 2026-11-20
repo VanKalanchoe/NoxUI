@@ -33,7 +33,11 @@ namespace NoxUI
 
                 m_CloseBtn = Ref<UIButton>(new UIButton("X", [&viewport]()
                 {
-                    viewport.PendingClose = true;
+                    // The dock space may keep it open (unsaved changes to ask about).
+                    if (UIViewportManager* manager = UIViewportManager::GetActive())
+                        manager->RequestClose(viewport);
+                    else
+                        viewport.PendingClose = true;
                 }));
                 m_CloseBtn->StyleClass = "TitleClose";
                 m_CloseBtn->WidthMode = UISizeMode::Fixed;
@@ -219,6 +223,33 @@ namespace NoxUI
             }
             m_Viewports.clear();
         }
+    }
+
+    void UIViewportManager::RequestClose(UIViewport& viewport)
+    {
+        if (!m_DockSpace || !m_DockSpace->CanClosePanel || m_DockSpace->CanClosePanel(viewport.Title))
+            viewport.PendingClose = true;
+    }
+
+    bool UIViewportManager::ClosePanel(const std::string& title)
+    {
+        for (const auto& vp : m_Viewports)
+        {
+            if (vp->Title == title)
+            {
+                vp->PendingClose = true;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool UIViewportManager::HasPanel(const std::string& title) const
+    {
+        for (const auto& vp : m_Viewports)
+            if (vp->Title == title && !vp->PendingClose)
+                return true;
+        return false;
     }
 
     UIViewport* UIViewportManager::FindByWindowID(uint32_t windowID) const

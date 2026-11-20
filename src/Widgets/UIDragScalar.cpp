@@ -100,7 +100,11 @@ namespace NoxUI
         char* endPtr = nullptr;
         const float parsed = std::strtof(m_EditText.c_str(), &endPtr);
         if (endPtr != m_EditText.c_str() && std::isfinite(parsed))
+        {
             SetValue(parsed);
+            if (OnCommitted)
+                OnCommitted(Value); // (a typed value)
+        }
     }
 
     void UIDragScalar::OnUpdate(float dt)
@@ -200,10 +204,13 @@ namespace NoxUI
             return UIElement::OnPointerUp(e);
 
         const bool clicked = !m_Scrubbing && GetBounds().Contains(e.Position);
+        const bool scrubbed = m_Scrubbing;
         m_Pressed = false;
         m_Scrubbing = false;
         if (clicked && IsEnabled())
             BeginEdit();
+        if (scrubbed && OnCommitted)
+            OnCommitted(Value); // (a drag ended: the value it ended at)
         return true;
     }
 

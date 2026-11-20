@@ -386,7 +386,7 @@ inline bool NoxUI_ImplSDL3_ProcessEvent(const SDL_Event* event, NoxUI::UIContext
         {
             if (event->type == SDL_EVENT_WINDOW_CLOSE_REQUESTED)
             {
-                vp->PendingClose = true;
+                viewportManager->RequestClose(*vp); // (the dock space may keep it open: unsaved changes to ask about)
                 return true;
             }
             if (event->type == SDL_EVENT_WINDOW_RESIZED || event->type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED)

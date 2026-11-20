@@ -76,6 +76,7 @@ namespace NoxUI
         ~UIViewportManager();
 
         void SetDockSpace(UIDockSpace* dockSpace) { m_DockSpace = dockSpace; }
+        UIDockSpace* GetDockSpace() const { return m_DockSpace; }
         void SetPlatformBackend(UIViewportPlatformBackend backend) { m_Platform = std::move(backend); }
         void SetRendererBackend(UIViewportRendererBackend backend) { m_Renderer = std::move(backend); }
 
@@ -102,6 +103,13 @@ namespace NoxUI
         void UpdateAndRender(float dt);
 
         void Shutdown();
+        // The user asked to close a torn-off window (its title bar's X, the OS's close button): closed unless the dock space's
+        // CanClosePanel keeps it open (an editor with unsaved changes asks first, then calls ClosePanel itself).
+        void RequestClose(UIViewport& viewport);
+        // Closes the torn-off window showing `title` (no question asked: the caller decided); false when there is none.
+        bool ClosePanel(const std::string& title);
+        // A torn-off window shows `title` (and is not closing).
+        bool HasPanel(const std::string& title) const;
 
         size_t GetViewportCount() const { return m_Viewports.size(); }
 
