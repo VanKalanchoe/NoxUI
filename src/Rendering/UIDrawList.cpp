@@ -1,4 +1,5 @@
 #include "NoxUI/Rendering/UIDrawList.h"
+#include "NoxUI/Rendering/UIGlyphCache.h"
 
 #include <algorithm>
 #include <cmath>
@@ -119,6 +120,35 @@ namespace NoxUI
         m_Primitives.push_back(prim);
     }
 
+    bool UIDrawList::DrawCachedGlyph(UIGlyphCache& cache, const UIFont& font, float fontSizePx, uint32_t codepoint, double penX, double baselineY,
+                                     const glm::vec4& color)
+    {
+        // The pen on a whole pixel plus a quarter-pixel phase the glyph was rasterized with; the baseline on a whole pixel.
+        double whole = std::floor(penX);
+        int phase = static_cast<int>(std::lround((penX - whole) * UIGlyphCache::kSubpixelPhases));
+        if (phase >= UIGlyphCache::kSubpixelPhases)
+        {
+            whole += 1.0;
+            phase = 0;
+        }
+        const UIGlyphCache::Glyph* glyph = cache.Find(font, fontSizePx, codepoint, phase);
+        if (!glyph)
+            return false;
+        if (glyph->W == 0 || glyph->H == 0)
+            return true; // (nothing to draw)
+        const float x0 = static_cast<float>(whole) + static_cast<float>(glyph->X0);
+        const float y0 = static_cast<float>(std::round(baselineY)) + static_cast<float>(glyph->Y0);
+        UIPrimitive prim{};
+        prim.bounds = glm::vec4(x0, y0, x0 + static_cast<float>(glyph->W), y0 + static_cast<float>(glyph->H));
+        prim.color0 = color;
+        prim.uvOrP0P1 = glyph->UV;
+        prim.type = UI_PRIM_GLYPH_BITMAP;
+        prim.clipIndex = CurrentClipIndex();
+        prim.textureIndex = static_cast<uint32_t>(cache.GetTextureID());
+        m_Primitives.push_back(prim);
+        return true;
+    }
+
     void UIDrawList::AddText(std::string_view text, const Ref<UIFont>& fontIn, const glm::vec2& topLeftPos,
                              float fontSizePx, const glm::vec4& color)
     {
@@ -144,6 +174,12 @@ namespace NoxUI
         double x = static_cast<double>(topLeftPos.x);
         double baselineY = static_cast<double>(topLeftPos.y) + metrics.ascenderY * scale;
         const double lineHeight = metrics.lineHeight * scale;
+
+        // Up to UIGlyphCache::kMaxPixelSize: glyphs rasterized at this size from the glyph cache, on whole pixels (the layout -- advances,
+        // kerning, line height -- stays the distance field's, so measuring and drawing agree). Larger text, and a glyph the cache cannot
+        // give this frame, from the distance field.
+        UIGlyphCache& glyphCache = UIGlyphCache::Get();
+        const bool useGlyphCache = fontSizePx <= UIGlyphCache::kMaxPixelSize && glyphCache.GetTextureID() != kInvalidTextureID;
 
         double spaceAdvance = 0.25;
         if (const auto* spaceGlyph = fontGeometry.getGlyph(' '))
@@ -179,6 +215,15 @@ namespace NoxUI
                 glyph = fontGeometry.getGlyph('?');
             if (!glyph)
                 continue;
+
+            if (useGlyphCache && DrawCachedGlyph(glyphCache, *font, fontSizePx, glyph->getCodepoint(), x, baselineY, color))
+            {
+                double advance = glyph->getAdvance();
+                if (i + 1 < text.size())
+                    fontGeometry.getAdvance(advance, c, text[i + 1]);
+                x += advance * scale;
+                continue;
+            }
 
             double al = 0.0, ab = 0.0, ar = 0.0, at = 0.0;
             glyph->getQuadAtlasBounds(al, ab, ar, at);

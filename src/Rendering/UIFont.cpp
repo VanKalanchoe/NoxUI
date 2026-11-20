@@ -1,6 +1,7 @@
 #include "NoxUI/Rendering/UIFont.h"
 
 #include <algorithm>
+#include <atomic>
 #include <fstream>
 #include <string>
 
@@ -82,6 +83,9 @@ namespace NoxUI
 
     void UIFont::Load(const std::vector<uint8_t>& fontData, const std::string& name)
     {
+        static std::atomic<uint64_t> s_NextCacheId{ 1 };
+        m_CacheId = s_NextCacheId.fetch_add(1);
+        m_FontBytes = fontData;
         msdfgen::FreetypeHandle* ft = msdfgen::initializeFreetype();
         if (!ft)
         {

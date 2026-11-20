@@ -98,6 +98,7 @@ target_link_libraries(NoxUI
     PRIVATE
         yaml-cpp::yaml-cpp
         msdf-atlas-gen::msdf-atlas-gen
+        Freetype::Freetype # (UIGlyphCache rasterizes small text with it)
 )
 
 # -----------------------------------------------------------------------------

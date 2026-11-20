@@ -12,13 +12,15 @@
 namespace NoxUI
 {
     class UIFont;
+    class UIGlyphCache;
 
     enum UIPrimitiveType : uint32_t
     {
         UI_PRIM_ROUNDED_RECT  = 0u,
         UI_PRIM_TEXTURED_QUAD = 1u,
         UI_PRIM_MSDF_GLYPH    = 2u,
-        UI_PRIM_CUBIC_BEZIER  = 3u
+        UI_PRIM_CUBIC_BEZIER  = 3u,
+        UI_PRIM_GLYPH_BITMAP  = 4u  // a glyph from UIGlyphCache: 8-bit coverage, drawn texel for pixel
     };
 
     struct UIClipRect
@@ -90,6 +92,9 @@ namespace NoxUI
 
     private:
         uint32_t CurrentClipIndex() const { return m_ClipStack.empty() ? 0u : m_ClipStack.back(); }
+        // One glyph from the glyph cache at the pen (snapped to the pixel grid); false: draw it from the distance field.
+        bool DrawCachedGlyph(UIGlyphCache& cache, const UIFont& font, float fontSizePx, uint32_t codepoint, double penX, double baselineY,
+                             const glm::vec4& color);
 
         std::vector<UIPrimitive> m_Primitives;
         std::vector<UIClipRect> m_ClipRects;

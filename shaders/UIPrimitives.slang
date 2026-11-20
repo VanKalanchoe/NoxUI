@@ -7,7 +7,8 @@ enum UIPrimitiveType : uint
     UI_PRIM_ROUNDED_RECT  = 0u,
     UI_PRIM_TEXTURED_QUAD = 1u,
     UI_PRIM_MSDF_GLYPH    = 2u,
-    UI_PRIM_CUBIC_BEZIER  = 3u
+    UI_PRIM_CUBIC_BEZIER  = 3u,
+    UI_PRIM_GLYPH_BITMAP  = 4u  // a glyph from UIGlyphCache: 8-bit coverage, drawn texel for pixel
 };
 
 struct UIClipRect
@@ -304,6 +305,14 @@ float4 fragMain(UIVSOutput input, uniform UIPushConstants pc) : SV_TARGET0
         const float pxRange = screenPxRange(atlas, input.uv);
         const float opacity = clamp(pxRange * (sd - 0.5) + 0.5, 0.0, 1.0);
         outColor = float4(prim.color0.rgb, prim.color0.a * opacity);
+    }
+    else if (prim.type == uint(UIPrimitiveType.UI_PRIM_GLYPH_BITMAP))
+    {
+        // The glyph rasterized at this size and pen offset, its quad on whole pixels: each pixel reads its own texel's coverage.
+        Texture2D atlas = Texture2D.Handle(uint2(pc.imageHeapIndexOffset + prim.textureIndex, 0));
+        SamplerState samp = SamplerState.Handle(uint2(pc.samplerSlot, 0));
+        const float coverage = atlas.Sample(samp, input.uv).r;
+        outColor = float4(prim.color0.rgb, prim.color0.a * coverage);
     }
     else if (prim.type == uint(UIPrimitiveType.UI_PRIM_CUBIC_BEZIER))
     {

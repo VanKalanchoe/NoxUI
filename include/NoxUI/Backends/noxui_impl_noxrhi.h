@@ -22,6 +22,7 @@
 #include "NoxUI/Core/UIViewportManager.h"
 #include "NoxUI/Rendering/UIDrawList.h"
 #include "NoxUI/Rendering/UIFont.h"
+#include "NoxUI/Rendering/UIGlyphCache.h"
 
 static_assert(sizeof(NoxUI::UIPrimitive) == 160, "NoxUI::UIPrimitive must be 160 bytes to match UIPrimitives.slang");
 static_assert(sizeof(NoxUI::UIClipRect) == 32, "NoxUI::UIClipRect must be 32 bytes to match UIPrimitives.slang");
@@ -58,7 +59,8 @@ enum UIPrimitiveType : uint
     UI_PRIM_ROUNDED_RECT  = 0u,
     UI_PRIM_TEXTURED_QUAD = 1u,
     UI_PRIM_MSDF_GLYPH    = 2u,
-    UI_PRIM_CUBIC_BEZIER  = 3u
+    UI_PRIM_CUBIC_BEZIER  = 3u,
+    UI_PRIM_GLYPH_BITMAP  = 4u  // a glyph from UIGlyphCache: 8-bit coverage, drawn texel for pixel
 };
 
 struct UIClipRect
@@ -346,6 +348,14 @@ float4 fragMain(UIVSOutput input, uniform UIPushConstants pc) : SV_TARGET0
         const float opacity = clamp(pxRange * (sd - 0.5) + 0.5, 0.0, 1.0);
         outColor = float4(prim.color0.rgb, prim.color0.a * opacity);
     }
+    else if (prim.type == uint(UIPrimitiveType.UI_PRIM_GLYPH_BITMAP))
+    {
+        // The glyph rasterized at this size and pen offset, its quad on whole pixels: each pixel reads its own texel's coverage.
+        Texture2D atlas = Texture2D.Handle(uint2(pc.imageHeapIndexOffset + prim.textureIndex, 0));
+        SamplerState samp = SamplerState.Handle(uint2(pc.samplerSlot, 0));
+        const float coverage = atlas.Sample(samp, input.uv).r;
+        outColor = float4(prim.color0.rgb, prim.color0.a * coverage);
+    }
     else if (prim.type == uint(UIPrimitiveType.UI_PRIM_CUBIC_BEZIER))
     {
         const float d = sdCubicBezierApprox(input.pixelPos,
@@ -395,6 +405,9 @@ float4 fragMain(UIVSOutput input, uniform UIPushConstants pc) : SV_TARGET0
         uint64_t clipCapacityBytes = 0;
         uint32_t clipSlot = 0;
         uint32_t activeClipCount = 0;
+
+        nri::Buffer glyphStaging;           // new glyphs' pixels for UIGlyphCache's atlas, copied in this frame slot's CopyData
+        uint64_t glyphCapacityBytes = 0;
     };
 
     struct ManagedTexture
@@ -438,6 +451,8 @@ float4 fragMain(UIVSOutput input, uniform UIPushConstants pc) : SV_TARGET0
         std::mutex mutex;
         std::unordered_map<uint64_t, FrameGeometry> geometry;
         std::unordered_map<UITextureID, ManagedTexture> textures;
+        nri::Texture glyphAtlas;            // UIGlyphCache's R8 atlas (small text drawn at its size)
+        bool glyphAtlasInitialized = false; // its first layout transition recorded
         std::vector<std::pair<nri::Buffer, nri::Buffer>> deferredBuffers;
 
         uint32_t nextViewportSlot = 1;
@@ -552,7 +567,7 @@ float4 fragMain(UIVSOutput input, uniform UIPushConstants pc) : SV_TARGET0
             if (geom.primStaging || geom.primGpu)
                 bd.deferredBuffers.emplace_back(std::move(geom.primStaging), std::move(geom.primGpu));
 
-            const uint64_t newCap = std::max({ neededPrimBytes, geom.primCapacityBytes * 2ull, kMinPrimBytes });
+            const uint64_t newCap = std::max<uint64_t>({ neededPrimBytes, geom.primCapacityBytes * 2ull, kMinPrimBytes });
             geom.primStaging = bd.device->createBuffer({
                 .size = newCap,
                 .usage = NRI_BUFFER_USAGE_STAGING
@@ -570,7 +585,7 @@ float4 fragMain(UIVSOutput input, uniform UIPushConstants pc) : SV_TARGET0
             if (geom.clipStaging || geom.clipGpu)
                 bd.deferredBuffers.emplace_back(std::move(geom.clipStaging), std::move(geom.clipGpu));
 
-            const uint64_t newCap = std::max({ neededClipBytes, geom.clipCapacityBytes * 2ull, kMinClipBytes });
+            const uint64_t newCap = std::max<uint64_t>({ neededClipBytes, geom.clipCapacityBytes * 2ull, kMinClipBytes });
             geom.clipStaging = bd.device->createBuffer({
                 .size = newCap,
                 .usage = NRI_BUFFER_USAGE_STAGING
@@ -659,6 +674,71 @@ inline NoxUI::UITextureID NoxUI_ImplNoxRHI_CreateFontTexture(NoxUI::UIFont& font
     return texId;
 }
 
+namespace NoxUI::Detail
+{
+    // The glyphs UIGlyphCache rasterized since the last call, copied into its atlas in `cmd` (the graphics queue, ahead of this frame's
+    // draws -- and after every earlier frame's, which still read only rectangles these copies do not touch). Every rectangle's rows at
+    // a 256-byte pitch, each at a 512-byte boundary (D3D12's placement rules; the pitch is passed, so Vulkan reads the same layout).
+    // A full atlas is emptied afterwards: later uploads, which the GPU runs after this frame's draws, reuse its space.
+    inline void UploadGlyphs(NoxRHIBackendData& bd, FrameGeometry& geom, nri::CommandBuffer& cmd)
+    {
+        UIGlyphCache& cache = UIGlyphCache::Get();
+        if (!bd.glyphAtlas)
+            return;
+        if (!bd.glyphAtlasInitialized)
+        {
+            bd.glyphAtlas.recordInitialLayout(cmd.handle());
+            bd.glyphAtlasInitialized = true;
+        }
+        const std::vector<UIGlyphCache::Region> regions = cache.TakePendingRegions();
+        if (!regions.empty())
+        {
+            const auto align = [](uint64_t value, uint64_t to) { return (value + to - 1) / to * to; };
+            uint64_t total = 0;
+            for (const UIGlyphCache::Region& region : regions)
+                total = align(total, 512) + align(region.W, 256) * region.H;
+            if (total > geom.glyphCapacityBytes)
+            {
+                if (geom.glyphStaging)
+                    bd.deferredBuffers.emplace_back(std::move(geom.glyphStaging), nri::Buffer{});
+                geom.glyphCapacityBytes = std::max<uint64_t>(total, 256ull * 1024ull);
+                geom.glyphStaging = bd.device->createBuffer({ .size = geom.glyphCapacityBytes, .usage = NRI_BUFFER_USAGE_STAGING });
+            }
+            auto* mapped = static_cast<uint8_t*>(geom.glyphStaging.map(0, total));
+            const uint8_t* pixels = cache.GetPixels();
+            constexpr uint32_t size = UIGlyphCache::kAtlasSize;
+            std::vector<nri::TextureRegionUpload> copies;
+            copies.reserve(regions.size());
+            uint64_t offset = 0;
+            for (const UIGlyphCache::Region& region : regions)
+            {
+                offset = align(offset, 512);
+                const uint32_t pitch = static_cast<uint32_t>(align(region.W, 256));
+                for (uint32_t row = 0; row < region.H; ++row)
+                    std::memcpy(mapped + offset + static_cast<uint64_t>(row) * pitch, pixels + static_cast<size_t>(region.Y + row) * size + region.X, region.W);
+                copies.push_back(nri::TextureRegionUpload{ .stagingOffset = offset, .x = region.X, .y = region.Y, .width = region.W, .height = region.H,
+                                                           .rowPitch = pitch });
+                offset += static_cast<uint64_t>(pitch) * region.H;
+            }
+            geom.glyphStaging.unmap();
+
+            const nri::TextureBarrierDesc toCopy[] = { {
+                .texture = bd.glyphAtlas.handle(),
+                .before = { nri::AccessBits::ShaderRead, nri::StageBits::Fragment },
+                .after = { nri::AccessBits::TransferWrite, nri::StageBits::Transfer } } };
+            cmd.resourceBarriers(toCopy, {});
+            bd.glyphAtlas.recordRegionUploads(cmd.handle(), geom.glyphStaging.handle(), copies);
+            const nri::TextureBarrierDesc toRead[] = { {
+                .texture = bd.glyphAtlas.handle(),
+                .before = { nri::AccessBits::TransferWrite, nri::StageBits::Transfer },
+                .after = { nri::AccessBits::ShaderRead, nri::StageBits::Fragment } } };
+            cmd.resourceBarriers(toRead, {});
+        }
+        if (cache.ResetRequested())
+            cache.Reset();
+    }
+}
+
 inline NoxUI_NoxRHIDrawData NoxUI_ImplNoxRHI_PrepareDrawData(
     const NoxUI::UIDrawList& drawList,
     uint32_t frameSlot,
@@ -687,6 +767,7 @@ inline void NoxUI_ImplNoxRHI_CopyData(nri::CommandBuffer& cmd, const NoxUI_NoxRH
 
     const uint64_t key = NoxUI::Detail::MakeGeometryKey(drawData.viewportSlot, drawData.frameIndex % bd->framesInFlight);
     auto& geom = bd->geometry[key];
+    NoxUI::Detail::UploadGlyphs(*bd, geom, cmd); // (glyphs this draw list may use, before it is drawn)
 
     geom.activePrimCount = drawData.primitiveCount;
     geom.activeClipCount = drawData.clipRectCount;
@@ -807,6 +888,23 @@ inline bool NoxUI_ImplNoxRHI_Init(const NoxUI_ImplNoxRHI_InitInfo& info)
         .buildNow = true
     }, bd->compiler.handle());
     bd->device->finishPipelineBuilds();
+
+    // UIGlyphCache's atlas: small text rasterized at the size shown (glyphs are copied in by NoxUI_ImplNoxRHI_CopyData).
+    bd->glyphAtlas = bd->device->createTexture({
+        .width = NoxUI::UIGlyphCache::kAtlasSize,
+        .height = NoxUI::UIGlyphCache::kAtlasSize,
+        .arrayLayers = 1,
+        .mipLevels = 1,
+        .sampleCount = 1,
+        .usage = NRI_TEXTURE_USAGE_SHADER_RESOURCE,
+        .format = NRI_FORMAT_R8_UNORM,
+        .sharedAcrossQueues = true
+    });
+    if (bd->glyphAtlas)
+    {
+        bd->resourceHeap->registerTexture(bd->glyphAtlas);
+        NoxUI::UIGlyphCache::Get().SetTextureID(static_cast<NoxUI::UITextureID>(bd->glyphAtlas.getDescriptorSlot()));
+    }
 
     bdPtr = bd;
 
@@ -982,6 +1080,7 @@ inline void NoxUI_ImplNoxRHI_Shutdown()
 
     NoxUI::UIFont::SetAtlasUploadCallback({});
     NoxUI::UIFont::ReleaseDefault();
+    NoxUI::UIGlyphCache::Get().Clear(); // (its atlas goes with the backend: text falls back to the distance field)
 
     if (bdPtr->device && bdPtr->device->handle())
         bdPtr->device->waitIdle();
@@ -989,6 +1088,7 @@ inline void NoxUI_ImplNoxRHI_Shutdown()
     bdPtr->viewports.clear();
     bdPtr->geometry.clear();
     bdPtr->textures.clear();
+    bdPtr->glyphAtlas.reset();
     bdPtr->deferredBuffers.clear();
     bdPtr->pipeline.reset();
     bdPtr->compiler.reset();

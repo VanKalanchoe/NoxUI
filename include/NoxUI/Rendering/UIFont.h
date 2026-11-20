@@ -34,6 +34,10 @@ namespace NoxUI
         UITextureID GetAtlasTextureID() const { return m_AtlasTextureId; }
 
         bool IsValid() const { return m_Data != nullptr && m_AtlasWidth > 0 && m_AtlasHeight > 0; }
+        // The font file itself (UIGlyphCache rasterizes small text from it at the exact size shown) and an id no other font object
+        // ever has (a freed font's address can come back for another).
+        const std::vector<uint8_t>& GetFontBytes() const { return m_FontBytes; }
+        uint64_t GetCacheId() const { return m_CacheId; }
 
         // Optional global default font path & upload hook used by UIFont::GetDefault().
         static void SetDefaultFontPath(const std::filesystem::path& path);
@@ -50,6 +54,8 @@ namespace NoxUI
 
         std::unique_ptr<UIMSDFData> m_Data;
         std::vector<uint8_t> m_AtlasPixels;
+        std::vector<uint8_t> m_FontBytes;
+        uint64_t m_CacheId = 0;
         uint32_t m_AtlasWidth = 0;
         uint32_t m_AtlasHeight = 0;
         UITextureID m_AtlasTextureId = kInvalidTextureID;

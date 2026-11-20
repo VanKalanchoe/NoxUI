@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [ main ]
   workflow_dispatch:
+    inputs:
+      noxrhi_ref:
+        description: "NoxRHI branch or tag to build against"
+        required: false
+        default: main
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -34,7 +39,7 @@ jobs:
         shell: cmd
         run: |
           if not exist vendors mkdir vendors
-          git clone --depth 1 https://github.com/VanKalanchoe/NoxRHI.git vendors\NoxRHI
+          git clone --depth 1 --branch ${{ github.event.inputs.noxrhi_ref || 'main' }} https://github.com/VanKalanchoe/NoxRHI.git vendors\NoxRHI
           if not exist vendors\NoxRHI\vendors mkdir vendors\NoxRHI\vendors
           git clone --depth 1 --branch v3.1.0 https://github.com/GPUOpen-LibrariesAndSDKs/D3D12MemoryAllocator.git vendors\NoxRHI\vendors\D3D12MemoryAllocator
           curl -fSL https://github.com/shader-slang/slang/releases/download/v2026.14.1/slang-2026.14.1-windows-x86_64.zip -o "%TEMP%\slang.zip"
