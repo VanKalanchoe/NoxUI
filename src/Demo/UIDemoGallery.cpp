@@ -556,6 +556,8 @@ namespace NoxUI
             panels.push_back({ "Overlays & Theme", page });
         }
 
+        panels.push_back(CreateEditorWidgetsDemoPanel(context, reportStatus));
+
         return panels;
     }
 
