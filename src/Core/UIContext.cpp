@@ -400,6 +400,7 @@ namespace NoxUI
     bool UIContext::DispatchKeyDown(int keyCode, uint16_t mods, bool repeat)
     {
         m_Modifiers = mods;
+        s_Modifiers = mods;
 
         if (keyCode == static_cast<int>(UIKey::Escape) && m_Overlay)
         {
@@ -495,6 +496,8 @@ namespace NoxUI
     {
         ScopedCurrentContext currentGuard(s_Current, this);
         DropDetachedInput();
+        if (button > 0 && button < 32)
+            s_ButtonsHeld |= 1u << button;
         return DispatchPointerDown(pos, button);
     }
 
@@ -502,6 +505,8 @@ namespace NoxUI
     {
         ScopedCurrentContext currentGuard(s_Current, this);
         DropDetachedInput();
+        if (button > 0 && button < 32)
+            s_ButtonsHeld &= ~(1u << button);
         return DispatchPointerUp(pos, button);
     }
 
@@ -534,8 +539,21 @@ namespace NoxUI
 
         drawList.Clear(viewportSize);
         m_ViewportSize = viewportSize;
+
+        // What callbacks put off to this frame (they may rebuild what called them), then every element's sync.
+        if (!m_Deferred.empty())
+        {
+            std::vector<std::function<void()>> deferred = std::move(m_Deferred);
+            m_Deferred.clear();
+            for (std::function<void()>& action : deferred)
+                if (action)
+                    action();
+        }
         if (!m_Root || !m_Theme)
             return;
+        m_Root->SyncRecursive();
+        if (m_Overlay)
+            m_Overlay->SyncRecursive();
 
         m_Root->UpdateStylesRecursive(*m_Theme, dt);
         if (m_Overlay)

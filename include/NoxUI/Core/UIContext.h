@@ -57,8 +57,8 @@ namespace NoxUI
         bool OnScroll(const UIVec2& scrollDelta);
         bool OnKeyDown(UIKey key, uint16_t mods, bool repeat = false) { return OnKeyDown(static_cast<int>(key), mods, repeat); }
         bool OnKeyDown(int keyCode, uint16_t mods, bool repeat = false);
-        void OnKeyUp(UIKey key, uint16_t mods) { (void)key; m_Modifiers = mods; }
-        void SetModifiers(uint16_t mods) { m_Modifiers = mods; }
+        void OnKeyUp(UIKey key, uint16_t mods) { (void)key; m_Modifiers = mods; s_Modifiers = mods; }
+        void SetModifiers(uint16_t mods) { m_Modifiers = mods; s_Modifiers = mods; }
         uint16_t GetModifiers() const { return m_Modifiers; }
         bool OnTextInput(std::string_view text);
 
@@ -76,6 +76,15 @@ namespace NoxUI
         const UIVec2& GetViewportSize() const { return m_ViewportSize; }
         const UIVec2& GetLastMousePos() const { return m_LastMousePos; }
         bool IsDragging() const { return m_DragActive; }
+
+        // Runs `action` at the start of this context's next frame, after the input of this one: what must not happen inside the
+        // callback that asks for it (a list rebuilt from one of its own rows' clicks, a popup shown again from its own button).
+        void Defer(std::function<void()> action) { m_Deferred.push_back(std::move(action)); }
+
+        // The input state of the last event any context saw (every OS window's): the UIMod bits held, and whether a mouse button
+        // is held (0: any; else a UIMouseButton). For code outside an event (a finished drag becomes one undo step).
+        static uint16_t GetCurrentModifiers() { return s_Modifiers; }
+        static bool IsMouseButtonHeld(int button = 0) { return button == 0 ? s_ButtonsHeld != 0 : (s_ButtonsHeld & (1u << button)) != 0; }
         const UIDragPayload& GetDragPayload() const { return m_ActivePayload; }
 
     private:
@@ -96,6 +105,9 @@ namespace NoxUI
         UIPlatformCallbacks m_PlatformCallbacks{};
 
         inline static UIContext* s_Current = nullptr;
+        inline static uint16_t s_Modifiers = 0;
+        inline static uint32_t s_ButtonsHeld = 0;
+        std::vector<std::function<void()>> m_Deferred;
 
         Ref<UIElement> m_Hovered;
         Ref<UIElement> m_Captured;
