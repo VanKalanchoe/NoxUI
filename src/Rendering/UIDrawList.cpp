@@ -199,7 +199,7 @@ namespace NoxUI
             {
                 double adv = spaceAdvance;
                 if (i + 1 < text.size())
-                    fontGeometry.getAdvance(adv, c, text[i + 1]);
+                    msdf.PairAdvance(adv, c, text[i + 1]);
                 x += adv * scale;
                 continue;
             }
@@ -217,7 +217,7 @@ namespace NoxUI
             {
                 double advance = glyph->getAdvance();
                 if (i + 1 < text.size())
-                    fontGeometry.getAdvance(advance, c, text[i + 1]);
+                    msdf.PairAdvance(advance, c, text[i + 1]);
                 x += advance * scale;
                 continue;
             }
@@ -248,7 +248,7 @@ namespace NoxUI
 
             double advance = glyph->getAdvance();
             if (i + 1 < text.size())
-                fontGeometry.getAdvance(advance, c, text[i + 1]);
+                msdf.PairAdvance(advance, c, text[i + 1]);
             x += advance * scale;
         }
     }
