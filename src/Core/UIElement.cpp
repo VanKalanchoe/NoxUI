@@ -98,6 +98,30 @@ namespace NoxUI
         return m_DesiredSize;
     }
 
+    float UIElement::HeightForWidth(float width)
+    {
+        if (s_LayoutPass == 0) // (outside a layout pass: nothing to remember it for)
+            return ComputeHeightForWidth(width);
+        if (m_HeightForWidthPass != s_LayoutPass)
+        {
+            m_HeightForWidthPass = s_LayoutPass;
+            m_HeightForWidthCount = 0;
+            m_HeightForWidthNext = 0;
+        }
+        for (uint8_t i = 0; i < m_HeightForWidthCount; ++i)
+        {
+            if (m_HeightForWidthKey[i] == width)
+                return m_HeightForWidthValue[i];
+        }
+        const float height = ComputeHeightForWidth(width);
+        const uint8_t slot = m_HeightForWidthNext;
+        m_HeightForWidthKey[slot] = width;
+        m_HeightForWidthValue[slot] = height;
+        m_HeightForWidthNext = static_cast<uint8_t>((slot + 1) % 2);
+        m_HeightForWidthCount = static_cast<uint8_t>(std::min<int>(m_HeightForWidthCount + 1, 2));
+        return height;
+    }
+
     void UIElement::Arrange(const UIRect& allottedRect)
     {
         if (!Visible)

@@ -154,7 +154,7 @@ namespace NoxUI
     {
         const float labelW = LabelWidth(width);
         const float valueW = std::max(0.0f, width - labelW - kGap);
-        return std::max(m_Label->ComputeHeightForWidth(labelW), m_Value->ComputeHeightForWidth(valueW));
+        return std::max(m_Label->HeightForWidth(labelW), m_Value->HeightForWidth(valueW));
     }
 
     UIVec2 UIPropertyRow::ComputeDesiredSize()
@@ -168,7 +168,7 @@ namespace NoxUI
     {
         const float labelW = LabelWidth(rect.Width());
         const float valueX = rect.Min.x + labelW + kGap;
-        const float valueH = std::min(rect.Height(), m_Value->ComputeHeightForWidth(std::max(0.0f, rect.Max.x - valueX)));
+        const float valueH = std::min(rect.Height(), m_Value->HeightForWidth(std::max(0.0f, rect.Max.x - valueX)));
         const float valueY = rect.Min.y + (rect.Height() - valueH) * 0.5f;
         const float labelH = std::min(rect.Height(), m_Label->GetDesiredSize().y);
         const float labelY = rect.Min.y + (rect.Height() - labelH) * 0.5f;

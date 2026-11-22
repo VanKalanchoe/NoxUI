@@ -574,6 +574,7 @@ namespace NoxUI
         if (m_Overlay)
             m_Overlay->UpdateStylesRecursive(*m_Theme, dt);
 
+        UIElement::BeginLayoutPass();
         m_Root->Measure();
         m_Root->Arrange({ { 0.0f, 0.0f }, viewportSize });
         if (m_Overlay)
@@ -581,6 +582,7 @@ namespace NoxUI
             m_Overlay->Measure();
             m_Overlay->Arrange({ { 0.0f, 0.0f }, viewportSize });
         }
+        UIElement::EndLayoutPass();
 
         if (!m_Captured && !m_DragActive)
             UpdateHover(m_LastMousePos);

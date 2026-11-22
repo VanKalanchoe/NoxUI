@@ -47,7 +47,7 @@ namespace NoxUI
                 if (child->WidthMode == UISizeMode::Fill && totalFlex > 0.0f)
                     slotW = flexSpace * (std::max(0.0f, child->FlexWeight) / totalFlex);
                 const float cw = std::max(0.0f, slotW - child->Margin.Horizontal());
-                maxH = std::max(maxH, child->ComputeHeightForWidth(cw) + child->Margin.Vertical());
+                maxH = std::max(maxH, child->HeightForWidth(cw) + child->Margin.Vertical());
             }
             return maxH + Padding.Vertical();
         }
@@ -59,7 +59,7 @@ namespace NoxUI
             if (!child->Visible)
                 continue;
             const float cw = std::max(0.0f, innerW - child->Margin.Horizontal());
-            totalH += child->ComputeHeightForWidth(cw) + child->Margin.Vertical();
+            totalH += child->HeightForWidth(cw) + child->Margin.Vertical();
             ++visibleCount;
         }
         if (visibleCount > 1)
@@ -107,7 +107,7 @@ namespace NoxUI
             if (child->HeightMode == UISizeMode::Auto)
             {
                 const float cw = std::max(0.0f, contentRect.Width() - child->Margin.Horizontal());
-                return child->ComputeHeightForWidth(cw) + child->Margin.Vertical();
+                return child->HeightForWidth(cw) + child->Margin.Vertical();
             }
             return child->GetDesiredSize().y;
         };
@@ -152,7 +152,7 @@ namespace NoxUI
                 if (child->VAlign != UIAlignment::Stretch && child->HeightMode != UISizeMode::Fill)
                 {
                     const float cw = std::max(0.0f, childMain - child->Margin.Horizontal());
-                    const float childH = child->ComputeHeightForWidth(cw) + child->Margin.Vertical();
+                    const float childH = child->HeightForWidth(cw) + child->Margin.Vertical();
                     const float h = std::min(childH, contentRect.Height());
                     if (child->VAlign == UIAlignment::Center)
                         slot.Min.y = contentRect.Min.y + (contentRect.Height() - h) * 0.5f;
@@ -251,7 +251,7 @@ namespace NoxUI
             const uint32_t row = idx / cols;
             if (row >= rowHeights.size())
                 rowHeights.resize(row + 1, 0.0f);
-            rowHeights[row] = std::max(rowHeights[row], child->ComputeHeightForWidth(cellW));
+            rowHeights[row] = std::max(rowHeights[row], child->HeightForWidth(cellW));
             ++idx;
         }
         const float totalH = std::accumulate(rowHeights.begin(), rowHeights.end(), 0.0f)
@@ -353,7 +353,7 @@ namespace NoxUI
                     continue;
                 const uint32_t col = idx % cols;
                 const uint32_t row = idx / cols;
-                rowHeights[row] = std::max(rowHeights[row], child->ComputeHeightForWidth(colWidths[col]));
+                rowHeights[row] = std::max(rowHeights[row], child->HeightForWidth(colWidths[col]));
                 ++idx;
             }
         }

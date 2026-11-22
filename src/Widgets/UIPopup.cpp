@@ -45,7 +45,7 @@ namespace NoxUI
                 const UIVec2 desired = m_Content->Measure();
                 const float w = std::min(desired.x, std::max(40.0f, contentRect.Width() - kMargin * 2.0f));
                 // Narrower than it wants to be (a small window): its height follows the width it gets.
-                const float wanted = w < desired.x - 0.5f ? m_Content->ComputeHeightForWidth(w) : desired.y;
+                const float wanted = w < desired.x - 0.5f ? m_Content->HeightForWidth(w) : desired.y;
                 const float h = std::min(wanted, std::max(40.0f, contentRect.Height() - kMargin * 2.0f));
 
                 // Under the anchor; above it when it does not fit under and there is more room above.

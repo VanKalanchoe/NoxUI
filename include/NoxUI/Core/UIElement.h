@@ -44,8 +44,15 @@ namespace NoxUI
 
         // Layout pass (Pass 1: bottom-up Measure, Pass 2: top-down Arrange)
         UIVec2 Measure();
+        // The height this element needs at `width` (text wraps, a grid adds rows): override ComputeHeightForWidth, call HeightForWidth.
+        // HeightForWidth remembers its answers during a layout pass (UIContext marks it): containers ask each child several times
+        // (measuring a slot, then arranging it, then the child asks its own children), which nested stacks multiplied per level.
         virtual float ComputeHeightForWidth(float /*width*/) { return m_DesiredSize.y; }
+        float HeightForWidth(float width);
         void Arrange(const UIRect& allottedRect);
+        // UIContext: the layout pass begins (HeightForWidth remembers answers until it ends) and ends.
+        static void BeginLayoutPass() { s_LayoutPass = ++s_LayoutPassCounter; }
+        static void EndLayoutPass() { s_LayoutPass = 0; }
 
         const UIRect& GetBounds() const { return m_Bounds; }
         const UIVec2& GetDesiredSize() const { return m_DesiredSize; }
@@ -154,6 +161,15 @@ namespace NoxUI
         UIState m_State = UIState::Normal;
         UIStyleBox m_CurrentStyle{};
         bool m_HasResolvedStyle = false;
+
+        // HeightForWidth's answers in the current layout pass (two widths: a row asks its label and value at theirs, a stack at its own).
+        uint64_t m_HeightForWidthPass = 0;
+        float m_HeightForWidthKey[2]{};
+        float m_HeightForWidthValue[2]{};
+        uint8_t m_HeightForWidthCount = 0;
+        uint8_t m_HeightForWidthNext = 0;
+        inline static uint64_t s_LayoutPass = 0;
+        inline static uint64_t s_LayoutPassCounter = 0;
     };
 
     // Adds `sync` to the element's OnSync, after what it runs already. The function lives in the element: capture the element by raw

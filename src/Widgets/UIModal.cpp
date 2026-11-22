@@ -40,7 +40,7 @@ namespace NoxUI
                         continue;
                     const UIVec2 desired = child->Measure();
                     const float w = std::min(desired.x, std::max(120.0f, contentRect.Width() - 32.0f));
-                    const float h = std::min(child->ComputeHeightForWidth(w), std::max(80.0f, contentRect.Height() - 32.0f));
+                    const float h = std::min(child->HeightForWidth(w), std::max(80.0f, contentRect.Height() - 32.0f));
                     const UIVec2 min{ contentRect.Min.x + (contentRect.Width() - w) * 0.5f, contentRect.Min.y + (contentRect.Height() - h) * 0.5f };
                     child->Arrange({ min, min + UIVec2{ w, h } });
                 }

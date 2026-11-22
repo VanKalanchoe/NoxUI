@@ -106,7 +106,7 @@ namespace NoxUI
                 if (!child->Visible)
                     continue;
                 const float cw = std::max(0.0f, width - child->Margin.Horizontal());
-                sum += child->ComputeHeightForWidth(cw) + child->Margin.Vertical();
+                sum += child->HeightForWidth(cw) + child->Margin.Vertical();
                 ++count;
             }
             if (count > 1)
@@ -134,7 +134,7 @@ namespace NoxUI
                 continue;
 
             const float cw = std::max(0.0f, availW - child->Margin.Horizontal());
-            const float ch = child->ComputeHeightForWidth(cw);
+            const float ch = child->HeightForWidth(cw);
             const UIRect slot{
                 { contentRect.Min.x + child->Margin.Left, cursorY + child->Margin.Top },
                 { contentRect.Min.x + availW - child->Margin.Right, cursorY + child->Margin.Top + ch }
