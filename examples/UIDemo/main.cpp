@@ -242,6 +242,8 @@ namespace
 
         std::array<double, kMetricWindow> cpuHistoryMs{};
         std::array<double, kMetricWindow> gpuHistoryMs{};
+        std::array<double, kMetricWindow> uiHistoryMs{}; // (UIContext::UpdateAndRender alone: the UI's CPU work)
+        double lastUiMs = 0.0;
         size_t metricIndex = 0;
         size_t metricCount = 0;
         std::chrono::steady_clock::time_point lastFrameTime = std::chrono::steady_clock::now();
@@ -613,21 +615,25 @@ SDL_AppResult SDL_AppIterate(void* appstate)
         {
             state->cpuHistoryMs[state->metricIndex] = dtMs;
             state->gpuHistoryMs[state->metricIndex] = state->profilerState.lastGpuFrameMs;
+            state->uiHistoryMs[state->metricIndex] = state->lastUiMs;
             state->metricIndex = (state->metricIndex + 1) % kMetricWindow;
             state->metricCount = std::min(state->metricCount + 1, kMetricWindow);
         }
 
         double cpuAvgMs = 0.0;
         double gpuAvgMs = 0.0;
+        double uiAvgMs = 0.0;
         if (state->metricCount > 0)
         {
             for (size_t i = 0; i < state->metricCount; ++i)
             {
                 cpuAvgMs += state->cpuHistoryMs[i];
                 gpuAvgMs += state->gpuHistoryMs[i];
+                uiAvgMs += state->uiHistoryMs[i];
             }
             cpuAvgMs /= static_cast<double>(state->metricCount);
             gpuAvgMs /= static_cast<double>(state->metricCount);
+            uiAvgMs /= static_cast<double>(state->metricCount);
         }
         const double fps = cpuAvgMs > 0.001 ? 1000.0 / cpuAvgMs : 0.0;
 
@@ -682,7 +688,9 @@ SDL_AppResult SDL_AppIterate(void* appstate)
         if (state->telemetryFpsLabel)
         {
             char buf[96]{};
-            std::snprintf(buf, sizeof(buf), "FPS: %.1f (CPU avg: %.2f ms)", fps, cpuAvgMs);
+            // (the frame time is one frame to the next -- waiting for the GPU and the swapchain included; the UI's CPU work is
+            // UpdateAndRender alone)
+            std::snprintf(buf, sizeof(buf), "FPS: %.1f (frame: %.2f ms) | UI CPU: %.3f ms", fps, cpuAvgMs, uiAvgMs);
             state->telemetryFpsLabel->Text = buf;
         }
         if (state->telemetryGpuLabel)
@@ -693,10 +701,12 @@ SDL_AppResult SDL_AppIterate(void* appstate)
         }
 
         NoxUI_ImplSDL3_NewFrame(state->uiContext, state->viewportManager.get());
+        const auto uiStart = std::chrono::steady_clock::now();
         state->uiContext.UpdateAndRender(
             state->uiDrawList,
             { static_cast<float>(extent.width), static_cast<float>(extent.height) },
             dtSec);
+        state->lastUiMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - uiStart).count();
 
         if (state->telemetryPrimsLabel)
         {

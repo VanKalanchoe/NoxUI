@@ -181,9 +181,8 @@ namespace NoxUI
         UIGlyphCache& glyphCache = UIGlyphCache::Get();
         const bool useGlyphCache = fontSizePx <= UIGlyphCache::kMaxPixelSize && glyphCache.GetTextureID() != kInvalidTextureID;
 
-        double spaceAdvance = 0.25;
-        if (const auto* spaceGlyph = fontGeometry.getGlyph(' '))
-            spaceAdvance = spaceGlyph->getAdvance();
+        const UIMSDFData& msdf = *font->GetMSDFData();
+        const double spaceAdvance = msdf.SpaceAdvance;
 
         for (size_t i = 0; i < text.size(); ++i)
         {
@@ -210,9 +209,7 @@ namespace NoxUI
                 continue;
             }
 
-            const auto* glyph = fontGeometry.getGlyph(static_cast<uint32_t>(static_cast<unsigned char>(c)));
-            if (!glyph)
-                glyph = fontGeometry.getGlyph('?');
+            const auto* glyph = msdf.Glyph(c); // ('?' for a byte the font lacks)
             if (!glyph)
                 continue;
 

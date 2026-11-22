@@ -154,6 +154,7 @@ namespace NoxUI
 
         GenerateMSDFAtlasRGBA8<uint8_t, float, 3, msdf_atlas::msdfGenerator>(
             m_Data->Glyphs, m_AtlasWidth, m_AtlasHeight, m_AtlasPixels);
+        m_Data->BuildByteGlyphs();
 
         if (s_UploadCallback)
             m_AtlasTextureId = s_UploadCallback(m_AtlasWidth, m_AtlasHeight, m_AtlasPixels.data());

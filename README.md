@@ -69,6 +69,16 @@ const NoxUI_NoxRHIDrawData drawData = NoxUI_ImplNoxRHI_PrepareDrawData(drawList,
 
 ---
 
+## Performance Notes
+
+- **Text measurement** reads glyph advances from a per-byte table built at font load (`UIMSDFData::ByteGlyphs`), not msdf-atlas-gen's
+  `std::map` lookup per character; **word wrap** adds token widths instead of re-measuring the line for every word (same line breaks:
+  checked against the old algorithm over 3.3 million texts / widths / sizes); a **wrapped label keeps its last wrap** while its text,
+  width, font size and font stay the same (layout asks for a wrapped label's height several times a frame). The "Editor Widgets" demo tab
+  went from 3.4 ms to 0.15 ms of `UpdateAndRender` per frame (Release; 44 ms to 1.1 ms in Debug); the other tabs take 0.02-0.04 ms.
+- **UIDemo's telemetry** shows the frame time (one frame to the next: waiting for the GPU and the swapchain included) and, separately,
+  `UI CPU` -- `UIContext::UpdateAndRender` alone. Measure in Release: Debug builds are ~10x slower and NoxRHI's validation adds more.
+
 ## Requirements & Dependencies
 
 ### System Prerequisites (Windows)

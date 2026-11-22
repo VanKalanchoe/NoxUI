@@ -46,6 +46,20 @@ namespace NoxUI
         void OnPaint(UIDrawList& drawList, const UITheme& theme) override;
 
     private:
+        // The last word wrap (layout's height queries and paint share it), kept while text, width, size and font stay the same.
+        struct WrapCache
+        {
+            std::string Source;
+            std::string Text;
+            float Width = -1.0f;
+            float FontSize = 0.0f;
+            float Height = 0.0f;
+            const UIFont* Font = nullptr;
+            bool Valid = false;
+        };
+        const WrapCache& GetWrapped(float width, float fontSize);
+        WrapCache m_WrapCache;
+
         // The shortened text of the last paint, kept while text, width and size stay the same.
         std::string m_ElideSource;
         std::string m_ElideResult;

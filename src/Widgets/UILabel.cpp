@@ -18,6 +18,36 @@ namespace NoxUI
 
     UILabel::~UILabel() = default;
 
+    namespace
+    {
+        // The width MeasureText gives one line without newlines, before it is cast to float: the sum of its characters' advances. Word
+        // wrap adds these per token (the sum of the parts is the whole: no kerning in measuring), and casts at the comparison, as
+        // MeasureText does -- so it breaks lines exactly where measuring each joined candidate did.
+        double LineAdvanceSum(std::string_view text, const Ref<UIFont>& fontAsset, float fontSize, double& outScale, bool& outFallback)
+        {
+            Ref<UIFont> font = fontAsset ? fontAsset : UIFont::GetDefault();
+            outFallback = !font || !font->IsValid() || !font->GetMSDFData();
+            if (outFallback)
+                return static_cast<double>(text.size());
+            const UIMSDFData& msdf = *font->GetMSDFData();
+            const auto& metrics = msdf.FontGeometry.getMetrics();
+            outScale = static_cast<double>(fontSize) / (metrics.ascenderY - metrics.descenderY);
+            double width = 0.0;
+            for (const char c : text)
+            {
+                if (c == '\r')
+                    continue;
+                if (c == ' ')
+                    width += msdf.SpaceAdvance * outScale;
+                else if (c == '\t')
+                    width += 4.0 * msdf.SpaceAdvance * outScale;
+                else if (const auto* glyph = msdf.Glyph(c))
+                    width += glyph->getAdvance() * outScale;
+            }
+            return width;
+        }
+    }
+
     UIVec2 UILabel::MeasureText(std::string_view text, const Ref<UIFont>& fontAsset, float fontSize)
     {
         if (text.empty())
@@ -27,13 +57,10 @@ namespace NoxUI
         if (!font || !font->IsValid() || !font->GetMSDFData())
             return { static_cast<float>(text.size()) * fontSize * 0.55f, fontSize };
 
-        const auto& fontGeometry = font->GetMSDFData()->FontGeometry;
-        const auto& metrics = fontGeometry.getMetrics();
+        const UIMSDFData& msdf = *font->GetMSDFData();
+        const auto& metrics = msdf.FontGeometry.getMetrics();
         const double scale = static_cast<double>(fontSize) / (metrics.ascenderY - metrics.descenderY);
-
-        double spaceAdv = 0.25;
-        if (const auto* sp = fontGeometry.getGlyph(' '))
-            spaceAdv = sp->getAdvance();
+        const double spaceAdv = msdf.SpaceAdvance;
 
         double maxW = 0.0;
         double lineW = 0.0;
@@ -60,10 +87,7 @@ namespace NoxUI
                 lineW += 4.0 * spaceAdv * scale;
                 continue;
             }
-            const auto* glyph = fontGeometry.getGlyph(static_cast<uint32_t>(static_cast<unsigned char>(c)));
-            if (!glyph)
-                glyph = fontGeometry.getGlyph('?');
-            if (glyph)
+            if (const auto* glyph = msdf.Glyph(c)) // ('?' for a byte the font lacks)
                 lineW += glyph->getAdvance() * scale;
         }
         maxW = std::max(maxW, lineW);
@@ -92,6 +116,7 @@ namespace NoxUI
                 line.remove_suffix(1);
 
             std::string current;
+            double currentWidth = 0.0; // (current's advance sum, LineAdvanceSum: a candidate's is current's + the token's)
             size_t wordStart = 0;
             while (wordStart < line.size())
             {
@@ -109,25 +134,42 @@ namespace NoxUI
                 }
 
                 std::string_view token = line.substr(wordStart, tokenEnd - wordStart);
+                double scale = 0.0;
+                bool fallback = false;
+                const double tokenWidth = LineAdvanceSum(token, fontAsset, fontSize, scale, fallback);
                 if (current.empty())
                 {
                     if (!isSpace)
+                    {
                         current.assign(token);
+                        currentWidth = tokenWidth;
+                    }
                 }
                 else
                 {
-                    std::string candidate = current;
-                    candidate.append(token);
-                    if (MeasureText(candidate, fontAsset, fontSize).x <= maxWidth)
+                    // (fallback without a font: MeasureText's width is characters * size * 0.55, computed in float)
+                    const float candidateWidth = fallback ? static_cast<float>(currentWidth + tokenWidth) * fontSize * 0.55f
+                                                          : static_cast<float>(currentWidth + tokenWidth);
+                    if (candidateWidth <= maxWidth)
                     {
-                        current = std::move(candidate);
+                        current.append(token);
+                        currentWidth += tokenWidth;
                     }
                     else
                     {
                         if (!result.empty() && result.back() != '\n')
                             result.push_back('\n');
                         result.append(current);
-                        current = isSpace ? std::string() : std::string(token);
+                        if (isSpace)
+                        {
+                            current.clear();
+                            currentWidth = 0.0;
+                        }
+                        else
+                        {
+                            current.assign(token);
+                            currentWidth = tokenWidth;
+                        }
                     }
                 }
                 wordStart = tokenEnd;
@@ -194,13 +236,32 @@ namespace NoxUI
         return build(low);
     }
 
+    const UILabel::WrapCache& UILabel::GetWrapped(float width, float fontSize)
+    {
+        // Layout asks a wrapped label for its height several times a frame (each parent measures, then arranges) and paint wraps it
+        // again: the editor-widgets demo wrapped ~550 times a frame. The last result is kept while text, width, size and font stay.
+        WrapCache& cache = m_WrapCache;
+        const UIFont* font = FontAsset ? FontAsset.get() : UIFont::GetDefault().get(); // (the font it is measured with)
+        if (!cache.Valid || cache.Width != width || cache.FontSize != fontSize || cache.Font != font || cache.Source != Text)
+        {
+            cache.Source = Text;
+            cache.Width = width;
+            cache.FontSize = fontSize;
+            cache.Font = font;
+            cache.Text = WrapText(Text, FontAsset, fontSize, width);
+            cache.Height = MeasureText(cache.Text, FontAsset, fontSize).y;
+            cache.Valid = true;
+        }
+        return cache;
+    }
+
     float UILabel::ComputeHeightForWidth(float width)
     {
         if (HeightMode == UISizeMode::Fixed)
             return FixedSize.y;
         const float fontSize = FontSizeOverride > 0.0f ? FontSizeOverride : GetResolvedStyle().FontSize;
         if (WordWrap && width > 1.0f && !Text.empty())
-            return MeasureText(WrapText(Text, FontAsset, fontSize, width), FontAsset, fontSize).y;
+            return GetWrapped(width, fontSize).Height;
         return MeasureText(Text, FontAsset, fontSize).y;
     }
 
@@ -223,8 +284,7 @@ namespace NoxUI
         const UIColor color = UseColorOverride ? ColorOverride : style.TextColor;
 
         const UIRect& b = GetBounds();
-        const std::string wrapped = (WordWrap && b.Width() > 1.0f) ? WrapText(Text, FontAsset, fontSize, b.Width()) : std::string();
-        std::string_view painted = (WordWrap && b.Width() > 1.0f) ? std::string_view(wrapped) : std::string_view(Text);
+        std::string_view painted = (WordWrap && b.Width() > 1.0f) ? std::string_view(GetWrapped(b.Width(), fontSize).Text) : std::string_view(Text);
 
         // A line wider than the label is shortened: text never leaves the space its parent gave it.
         m_Elided = false;
