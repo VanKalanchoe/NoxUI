@@ -348,11 +348,10 @@ namespace NoxUI
                 return true;
             }
 
-            const auto now = std::chrono::steady_clock::now();
-            const bool isDoubleClick = (nodeId == m_LastClickId) &&
-                                       (std::chrono::duration_cast<std::chrono::milliseconds>(now - m_LastClickTime).count() < 350);
+            const uint64_t now = GetTimeMs(); // (the UI's clock: SetTimeSource)
+            const bool isDoubleClick = (nodeId == m_LastClickId) && (now - m_LastClickMs) < 350;
             m_LastClickId = nodeId;
-            m_LastClickTime = now;
+            m_LastClickMs = now;
 
             if (isDoubleClick && OnDoubleClick)
                 OnDoubleClick(nodeId);

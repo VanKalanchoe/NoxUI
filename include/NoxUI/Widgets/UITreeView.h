@@ -113,7 +113,7 @@ namespace NoxUI
 
         uint64_t m_PendingSingleSelectId = 0;
         uint64_t m_LastClickId = 0;
-        std::chrono::steady_clock::time_point m_LastClickTime{};
+        uint64_t m_LastClickMs = 0; // (GetTimeMs of the last click: double clicks)
 
         uint64_t m_RenameId = 0;
         Ref<UITextInput> m_RenameInput;

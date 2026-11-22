@@ -152,8 +152,20 @@ namespace NoxUI
         }
     }
 
+    // The clock the UI reads (double clicks, the demo's animated values): the steady clock, or a function set with SetTimeSource -- a
+    // test's frame clock, so a scripted run draws the same frames every time.
+    using UITimeSourceMs = uint64_t (*)();
+    inline UITimeSourceMs& TimeSourceOverride()
+    {
+        static UITimeSourceMs s_Source = nullptr;
+        return s_Source;
+    }
+    inline void SetTimeSource(UITimeSourceMs source) { TimeSourceOverride() = source; } // (nullptr: the steady clock again)
+
     inline uint64_t GetTimeMs()
     {
+        if (const UITimeSourceMs source = TimeSourceOverride())
+            return source();
         static const auto s_Start = std::chrono::steady_clock::now();
         const auto now = std::chrono::steady_clock::now();
         return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(now - s_Start).count());

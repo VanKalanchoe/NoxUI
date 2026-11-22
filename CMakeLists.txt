@@ -20,6 +20,7 @@ endif()
 option(NOXUI_BUILD_SDL3_BACKEND   "Provide header-only SDL3 platform backend target (NoxUI::SDL3)" ON)
 option(NOXUI_BUILD_NOXRHI_BACKEND "Provide header-only NoxRHI renderer backend target (NoxUI::NoxRHI)" ON)
 option(NOXUI_BUILD_EXAMPLES       "Build standalone NoxUI examples (UIDemo)" ON)
+option(NOXUI_BUILD_TESTS          "Build NoxUI's headless tests (UIFrameReplay)" ON)
 
 set(NOXRHI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/vendors/NoxRHI" CACHE PATH "Path to NoxRHI repository")
 
@@ -195,4 +196,13 @@ if(NOXUI_BUILD_EXAMPLES)
             "${CMAKE_CURRENT_SOURCE_DIR}/shaders"
             "$<TARGET_FILE_DIR:UIDemo>/shaders"
     )
+endif()
+
+# -----------------------------------------------------------------------------
+# Tests (headless: no window, no GPU)
+# -----------------------------------------------------------------------------
+if(NOXUI_BUILD_TESTS)
+    add_executable(UIFrameReplay tests/UIFrameReplay.cpp)
+    target_link_libraries(UIFrameReplay PRIVATE NoxUI::Core)
+    target_compile_definitions(UIFrameReplay PRIVATE NOXUI_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 endif()
