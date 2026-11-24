@@ -518,9 +518,12 @@ float4 fragMain(UIVSOutput input, uniform UIPushConstants pc) : SV_TARGET0
         if (std::filesystem::exists("shaders/UIPrimitives.slang", ec))
             return "shaders/UIPrimitives.slang";
 
-        std::filesystem::path folder = std::filesystem::path("shader_cache_noxui");
-        std::filesystem::create_directories(folder, ec);
-        std::filesystem::path shaderPath = folder / "noxui_primitives_builtin.slang";
+        std::filesystem::path shaderPath = !requestedPath.empty()
+            ? std::filesystem::path(requestedPath)
+            : (std::filesystem::path("shader_cache_noxui") / "noxui_primitives_builtin.slang");
+        std::filesystem::path folder = shaderPath.parent_path();
+        if (!folder.empty())
+            std::filesystem::create_directories(folder, ec);
 
         const size_t sourceLen = std::strlen(kEmbeddedUIShaderSource);
         bool needWrite = !std::filesystem::exists(shaderPath, ec);
