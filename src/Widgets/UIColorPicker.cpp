@@ -125,10 +125,13 @@ namespace NoxUI
                 StyleClass = "MenuPopup";
                 DrawBackground = true;
                 HitTestMode = UIHitTestMode::Self; // a press between the controls stays in the popup
-                Padding = UIThickness::All(10.0f);
+                Padding = UIThickness::All(12.0f);
+                WidthMode = UISizeMode::Fixed;
+                FixedSize = { 308.0f, 0.0f };
 
                 m_Picker = Ref<UIColorPicker>(new UIColorPicker(color, [this](const UIColor&) { Changed(m_Picker.get()); }));
                 m_Picker->ShowAlpha = showAlpha;
+                m_Picker->WidthMode = UISizeMode::Fill;
                 AddChild(m_Picker);
 
                 m_Compare = Ref<UIColorCompare>(new UIColorCompare());
@@ -185,11 +188,13 @@ namespace NoxUI
 
                 Ref<UIStackBox> hexRow(new UIStackBox(UIOrientation::Horizontal, 6.0f));
                 hexRow->WidthMode = UISizeMode::Fill;
-                Ref<UILabel> hexLabel(new UILabel("Hex", 15.0f));
+                Ref<UILabel> hexLabel(new UILabel("Hex", 14.5f));
                 hexLabel->VAlign = UIAlignment::Center;
                 hexRow->AddChild(hexLabel);
                 m_Hex = Ref<UITextInput>(new UITextInput(UIColorPicker::FormatHex(color, showAlpha)));
                 m_Hex->WidthMode = UISizeMode::Fill;
+                m_Hex->HeightMode = UISizeMode::Fixed;
+                m_Hex->FixedSize = { 0.0f, 30.0f };
                 m_Hex->Tooltip = showAlpha ? "#RRGGBBAA (or #RRGGBB, #RGB)" : "#RRGGBB (or #RGB)";
                 m_Hex->OnChanged = [this](const std::string& text)
                 {
@@ -213,11 +218,14 @@ namespace NoxUI
                 Ref<UIDragScalar> field(new UIDragScalar(0.0f, maxValue / 255.0f));
                 field->Prefix = name;
                 field->PrefixColor = tagColor;
+                field->FontSize = 14.5f;
                 field->Min = 0.0f;
                 field->Max = maxValue;
                 field->Step = 1.0f;
                 field->Format = "{:.0f}";
                 field->WidthMode = UISizeMode::Fill;
+                field->HeightMode = UISizeMode::Fixed;
+                field->FixedSize = { 0.0f, 30.0f };
                 return field;
             }
 

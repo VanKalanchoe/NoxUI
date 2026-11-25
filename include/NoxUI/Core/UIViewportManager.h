@@ -34,6 +34,7 @@ namespace NoxUI
         std::function<void(void* windowHandle, int& outW, int& outH)> GetWindowSize;
         std::function<void(void* windowHandle, int& outPixelW, int& outPixelH)> GetWindowPixelSize;
         std::function<float(void* windowHandle)> GetWindowContentScale;
+        std::function<void(void* windowHandle, float opacity)> SetWindowOpacity;
         std::function<void(float& outGlobalX, float& outGlobalY, bool& outLeftDown)> GetGlobalMouseState;
     };
 

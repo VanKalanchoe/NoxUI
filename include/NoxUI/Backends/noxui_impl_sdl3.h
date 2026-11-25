@@ -344,6 +344,11 @@ inline bool NoxUI_ImplSDL3_Init(SDL_Window* mainWindow, NoxUI::UIContext& mainCo
             const float s = SDL_GetWindowDisplayScale(static_cast<SDL_Window*>(windowHandle));
             return s > 0.0f ? s : 1.0f;
         };
+        vpPlat.SetWindowOpacity = [](void* windowHandle, float opacity)
+        {
+            if (windowHandle)
+                SDL_SetWindowOpacity(static_cast<SDL_Window*>(windowHandle), std::clamp(opacity, 0.1f, 1.0f));
+        };
         vpPlat.GetGlobalMouseState = [](float& outGlobalX, float& outGlobalY, bool& outLeftDown)
         {
             const SDL_MouseButtonFlags btns = SDL_GetGlobalMouseState(&outGlobalX, &outGlobalY);

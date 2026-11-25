@@ -6,6 +6,7 @@
 #include "NoxUI/Layout/UILayout.h"
 #include "NoxUI/Widgets/UIButton.h"
 #include "NoxUI/Widgets/UILabel.h"
+#include "NoxUI/Layout/UIWindow.h"
 
 namespace NoxUI
 {
@@ -99,11 +100,18 @@ namespace NoxUI
                 }
                 if (e.Position.y <= b.Min.y + m_TitleBarHeight)
                 {
-                    float scale = 1.0f;
+                    float scaleX = 1.0f;
+                    float scaleY = 1.0f;
                     const auto& plat = m_Manager.GetPlatformBackend();
-                    if (plat.GetWindowContentScale && m_Viewport.WindowHandle)
-                        scale = std::max(0.1f, plat.GetWindowContentScale(m_Viewport.WindowHandle));
-                    m_Manager.BeginDragViewport(&m_Viewport, { e.Position.x / scale, e.Position.y / scale });
+                    if (plat.GetWindowSize && plat.GetWindowPixelSize && m_Viewport.WindowHandle)
+                    {
+                        int winW = 0, winH = 0, pixW = 0, pixH = 0;
+                        plat.GetWindowSize(m_Viewport.WindowHandle, winW, winH);
+                        plat.GetWindowPixelSize(m_Viewport.WindowHandle, pixW, pixH);
+                        if (winW > 0 && pixW > 0) scaleX = static_cast<float>(pixW) / static_cast<float>(winW);
+                        if (winH > 0 && pixH > 0) scaleY = static_cast<float>(pixH) / static_cast<float>(winH);
+                    }
+                    m_Manager.BeginDragViewport(&m_Viewport, { e.Position.x / scaleX, e.Position.y / scaleY });
                     return true;
                 }
                 return false;
@@ -358,12 +366,22 @@ namespace NoxUI
             m_Platform.GetWindowSize(m_Platform.MainWindowHandle, mainW, mainH);
             const bool overMain = (gx >= static_cast<float>(mainX) && gx <= static_cast<float>(mainX + mainW) &&
                                    gy >= static_cast<float>(mainY) && gy <= static_cast<float>(mainY + mainH));
+            if (m_Platform.SetWindowOpacity)
+                m_Platform.SetWindowOpacity(m_ActiveDragViewport->WindowHandle, overMain ? 0.55f : 1.0f);
             if (overMain)
             {
-                const float scale = m_Platform.GetWindowContentScale ? m_Platform.GetWindowContentScale(m_Platform.MainWindowHandle) : 1.0f;
+                float scaleX = 1.0f;
+                float scaleY = 1.0f;
+                if (m_Platform.GetWindowPixelSize)
+                {
+                    int pixW = 0, pixH = 0;
+                    m_Platform.GetWindowPixelSize(m_Platform.MainWindowHandle, pixW, pixH);
+                    if (mainW > 0 && pixW > 0) scaleX = static_cast<float>(pixW) / static_cast<float>(mainW);
+                    if (mainH > 0 && pixH > 0) scaleY = static_cast<float>(pixH) / static_cast<float>(mainH);
+                }
                 const UIVec2 localPos{
-                    (gx - static_cast<float>(mainX)) * scale,
-                    (gy - static_cast<float>(mainY)) * scale
+                    (gx - static_cast<float>(mainX)) * scaleX,
+                    (gy - static_cast<float>(mainY)) * scaleY
                 };
                 m_DockSpace->UpdateDockPreview(localPos);
             }
@@ -386,12 +404,65 @@ namespace NoxUI
                 m_Platform.GetGlobalMouseState(gx, gy, leftDown);
             if (!leftDown)
             {
+                if (m_Platform.SetWindowOpacity)
+                    m_Platform.SetWindowOpacity(m_ActiveDragViewport->WindowHandle, 1.0f);
+
+                bool overMain = false;
+                UIVec2 mainLocalWinPos{ 80.0f, 80.0f };
+                UIVec2 mainLocalWinSize{
+                    static_cast<float>(std::max<uint32_t>(220u, m_ActiveDragViewport->PixelWidth)),
+                    static_cast<float>(std::max<uint32_t>(140u, m_ActiveDragViewport->PixelHeight))
+                };
+                if (m_DockSpace && m_Platform.MainWindowHandle && m_Platform.GetWindowPosition && m_Platform.GetWindowSize)
+                {
+                    int mainX = 0, mainY = 0, mainW = 0, mainH = 0;
+                    m_Platform.GetWindowPosition(m_Platform.MainWindowHandle, mainX, mainY);
+                    m_Platform.GetWindowSize(m_Platform.MainWindowHandle, mainW, mainH);
+                    overMain = (gx >= static_cast<float>(mainX) && gx <= static_cast<float>(mainX + mainW) &&
+                                gy >= static_cast<float>(mainY) && gy <= static_cast<float>(mainY + mainH));
+                    if (overMain)
+                    {
+                        float scaleX = 1.0f;
+                        float scaleY = 1.0f;
+                        if (m_Platform.GetWindowPixelSize)
+                        {
+                            int pixW = 0, pixH = 0;
+                            m_Platform.GetWindowPixelSize(m_Platform.MainWindowHandle, pixW, pixH);
+                            if (mainW > 0 && pixW > 0) scaleX = static_cast<float>(pixW) / static_cast<float>(mainW);
+                            if (mainH > 0 && pixH > 0) scaleY = static_cast<float>(pixH) / static_cast<float>(mainH);
+                        }
+                        int vpX = 0, vpY = 0, vpW = 0, vpH = 0;
+                        m_Platform.GetWindowPosition(m_ActiveDragViewport->WindowHandle, vpX, vpY);
+                        m_Platform.GetWindowSize(m_ActiveDragViewport->WindowHandle, vpW, vpH);
+                        const UIRect& dockBounds = m_DockSpace->GetBounds();
+                        mainLocalWinSize = {
+                            std::max(220.0f, static_cast<float>(vpW) * scaleX),
+                            std::max(140.0f, static_cast<float>(vpH) * scaleY)
+                        };
+                        const float rawX = (static_cast<float>(vpX) - static_cast<float>(mainX)) * scaleX - dockBounds.Min.x;
+                        const float rawY = (static_cast<float>(vpY) - static_cast<float>(mainY)) * scaleY - dockBounds.Min.y;
+                        mainLocalWinPos = {
+                            std::clamp(rawX, 0.0f, std::max(0.0f, dockBounds.Width() - 80.0f)),
+                            std::clamp(rawY, 0.0f, std::max(0.0f, dockBounds.Height() - 40.0f))
+                        };
+                    }
+                }
+
                 if (m_DockSpace && m_DockSpace->HasActiveDropZone())
                 {
                     Ref<UIElement> content = m_ActiveDragViewport->Content;
                     if (m_ActiveDragViewport->ContentHost && content)
                         m_ActiveDragViewport->ContentHost->RemoveChild(content);
                     m_DockSpace->CommitDockDrop(m_ActiveDragViewport->Title, content);
+                    m_ActiveDragViewport->PendingClose = true;
+                }
+                else if (m_DockSpace && overMain)
+                {
+                    Ref<UIElement> content = m_ActiveDragViewport->Content;
+                    if (m_ActiveDragViewport->ContentHost && content)
+                        m_ActiveDragViewport->ContentHost->RemoveChild(content);
+                    m_DockSpace->ClearDockPreview();
+                    m_DockSpace->FloatPanel(m_ActiveDragViewport->Title, content, mainLocalWinPos, mainLocalWinSize, false);
                     m_ActiveDragViewport->PendingClose = true;
                 }
                 else if (m_DockSpace)

@@ -15,7 +15,7 @@ namespace NoxUI
 {
     namespace
     {
-        constexpr float kScrubThreshold = 3.0f; // pixels the pointer moves before a press is a drag and not a click
+        constexpr float kScrubThreshold = 6.0f; // pixels the pointer moves before a press is a drag and not a click (ImGui-like tolerance)
     }
 
     UIDragScalar::UIDragScalar(float value, float speed, std::function<void(float)> onChanged)
@@ -140,6 +140,15 @@ namespace NoxUI
         if (e.Button != 1 || !IsEnabled())
             return UIElement::OnPointerDown(e);
 
+        // ImGui-style Ctrl+Click enters text editing immediately on press with all text selected.
+        if (!m_Editing && (e.Modifiers & UIMod::Ctrl) != 0)
+        {
+            if (UIContext* ctx = UIContext::GetCurrent())
+                ctx->CancelPendingDrag();
+            BeginEdit();
+            return true;
+        }
+
         if (m_Editing)
         {
             // A click in the text puts the caret between the two nearest characters.
@@ -233,11 +242,50 @@ namespace NoxUI
         m_Cursor = std::min(m_Cursor, m_EditText.size());
         m_BlinkTimer = 0.0f;
 
-        if (key == UIKey::A && (e.Modifiers & UIMod::Ctrl) != 0)
+        if ((e.Modifiers & UIMod::Ctrl) != 0)
         {
-            m_SelectAll = true;
-            m_Cursor = m_EditText.size();
-            return true;
+            if (key == UIKey::A)
+            {
+                m_SelectAll = true;
+                m_Cursor = m_EditText.size();
+                return true;
+            }
+            if (key == UIKey::C)
+            {
+                if (UIContext* ctx = UIContext::GetCurrent(); ctx && ctx->GetPlatformCallbacks().SetClipboardText && !m_EditText.empty())
+                    ctx->GetPlatformCallbacks().SetClipboardText(m_EditText);
+                return true;
+            }
+            if (key == UIKey::X)
+            {
+                if (UIContext* ctx = UIContext::GetCurrent(); ctx && ctx->GetPlatformCallbacks().SetClipboardText && !m_EditText.empty())
+                    ctx->GetPlatformCallbacks().SetClipboardText(m_EditText);
+                m_EditText.clear();
+                m_Cursor = 0;
+                m_SelectAll = false;
+                return true;
+            }
+            if (key == UIKey::V)
+            {
+                if (UIContext* ctx = UIContext::GetCurrent(); ctx && ctx->GetPlatformCallbacks().GetClipboardText)
+                {
+                    std::string clip = ctx->GetPlatformCallbacks().GetClipboardText();
+                    std::erase_if(clip, [](char c) { return c == '\r' || c == '\n' || c == ' '; });
+                    if (!clip.empty())
+                    {
+                        if (m_SelectAll)
+                        {
+                            m_EditText.clear();
+                            m_Cursor = 0;
+                            m_SelectAll = false;
+                        }
+                        m_Cursor = std::min(m_Cursor, m_EditText.size());
+                        m_EditText.insert(m_Cursor, clip);
+                        m_Cursor += clip.size();
+                    }
+                }
+                return true;
+            }
         }
 
         switch (key)

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "NoxUI/Core/UIContext.h"
 #include "NoxUI/Core/UIPlatform.h"
 #include "NoxUI/Rendering/UIFont.h"
 #include "NoxUI/Rendering/UIDrawList.h"
@@ -20,26 +21,41 @@ namespace NoxUI
         ClipChildren = true;
     }
 
+    void UITextInput::SelectAll()
+    {
+        m_SelectAll = !Text.empty();
+        m_Cursor = Text.size();
+        m_BlinkTimer = 0.0f;
+    }
+
     void UITextInput::OnUpdate(float dt)
     {
         if (HasState(GetState(), UIState::Focused))
             m_BlinkTimer += dt;
         else
+        {
             m_SelectAll = false;
+            m_WasFocusedOnPress = false;
+        }
     }
 
     bool UITextInput::OnPointerDown(const UIPointerEvent& e)
     {
         if (e.Button == 1 && IsEnabled())
         {
+            if (UIContext* ctx = UIContext::GetCurrent())
+                ctx->CancelPendingDrag();
             m_BlinkTimer = 0.0f;
             const uint64_t now = GetTimeMs();
             const bool doubleClick = (now - m_LastClickTicks) < 350;
             m_LastClickTicks = now;
             const bool modClick = (e.Modifiers & (UIMod::Shift | UIMod::Ctrl)) != 0;
 
-            if ((doubleClick || modClick) && !Text.empty())
+            // ImGui-style: double-click, modifier-click, or clicking to focus for the first time selects all text
+            // so typing immediately replaces it (a second click places the caret at the exact character).
+            if ((doubleClick || modClick || !m_WasFocusedOnPress) && !Text.empty())
             {
+                m_WasFocusedOnPress = true;
                 m_SelectAll = true;
                 m_Cursor = Text.size();
                 return true;
@@ -72,11 +88,58 @@ namespace NoxUI
         m_BlinkTimer = 0.0f;
 
         const UIKey key = static_cast<UIKey>(e.KeyCode);
-        if (key == UIKey::A && (e.Modifiers & UIMod::Ctrl) != 0)
+        if ((e.Modifiers & UIMod::Ctrl) != 0)
         {
-            m_SelectAll = !Text.empty();
-            m_Cursor = Text.size();
-            return true;
+            if (key == UIKey::A)
+            {
+                m_SelectAll = !Text.empty();
+                m_Cursor = Text.size();
+                return true;
+            }
+            if (key == UIKey::C)
+            {
+                if (UIContext* ctx = UIContext::GetCurrent(); ctx && ctx->GetPlatformCallbacks().SetClipboardText && !Text.empty())
+                    ctx->GetPlatformCallbacks().SetClipboardText(Text);
+                return true;
+            }
+            if (key == UIKey::X)
+            {
+                if (UIContext* ctx = UIContext::GetCurrent(); ctx && ctx->GetPlatformCallbacks().SetClipboardText && !Text.empty())
+                    ctx->GetPlatformCallbacks().SetClipboardText(Text);
+                if (!ReadOnly && !Text.empty())
+                {
+                    Text.clear();
+                    m_Cursor = 0;
+                    m_SelectAll = false;
+                    if (OnChanged) OnChanged(Text);
+                }
+                return true;
+            }
+            if (key == UIKey::V)
+            {
+                if (!ReadOnly)
+                {
+                    if (UIContext* ctx = UIContext::GetCurrent(); ctx && ctx->GetPlatformCallbacks().GetClipboardText)
+                    {
+                        std::string clip = ctx->GetPlatformCallbacks().GetClipboardText();
+                        std::erase_if(clip, [](char c) { return c == '\r' || c == '\n'; });
+                        if (!clip.empty())
+                        {
+                            if (m_SelectAll)
+                            {
+                                Text.clear();
+                                m_Cursor = 0;
+                                m_SelectAll = false;
+                            }
+                            m_Cursor = std::min(m_Cursor, Text.size());
+                            Text.insert(m_Cursor, clip);
+                            m_Cursor += clip.size();
+                            if (OnChanged) OnChanged(Text);
+                        }
+                    }
+                }
+                return true;
+            }
         }
 
         switch (key)
