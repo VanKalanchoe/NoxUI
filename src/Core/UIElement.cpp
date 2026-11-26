@@ -145,7 +145,17 @@ namespace NoxUI
             return;
         }
         if (typeid(*this) != StateHashClass())
+        {
+            if (h.Complete)
+                h.IncompleteType = &typeid(*this);
             h.Complete = false;
+        }
+        if (h.Trace)
+        {
+            UIStateHasher own;
+            HashState(own);
+            h.Trace->emplace_back(this, own.Value());
+        }
         HashState(h);
         h.Add(m_Children.size());
         for (const auto& child : m_Children)

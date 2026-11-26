@@ -240,6 +240,22 @@ namespace
 
         std::array<float, 3> clearColor{ 0.063f, 0.075f, 0.106f };
 
+        // The UI drawn into a texture of its own and redrawn only when its draw list changed (UIDrawList::GetRevision, which an idle
+        // UpdateAndRender leaves as it was): other frames show the texture with one full-screen quad. --no-ui-cache: drawn every frame.
+        bool uiCacheEnabled = true;
+        bool traceUiChanges = false; // (--trace-ui-changes: log what keeps the UI from being idle)
+        int startTab = -1;           // (--tab N: the gallery opens on tab N)
+        nri::Texture uiCache;
+        uint32_t uiCacheSlot = 0;
+        nri::Extent2D uiCacheExtent{ 0, 0 };
+        uint64_t uiCacheRevision = 0;
+        std::array<float, 3> uiCacheClear{};
+        bool uiCacheValid = false;
+        uint64_t uiCacheRedraws = 0;
+        NoxUI::UIDrawList uiCompositeList;
+        // The telemetry readouts change four times a second (every frame, their text alone kept every UI frame from being idle).
+        std::chrono::steady_clock::time_point lastTelemetry{};
+
         std::array<double, kMetricWindow> cpuHistoryMs{};
         std::array<double, kMetricWindow> gpuHistoryMs{};
         std::array<double, kMetricWindow> uiHistoryMs{}; // (UIContext::UpdateAndRender alone: the UI's CPU work)
@@ -322,6 +338,7 @@ static void initNoxUI(AppState& state)
     if (std::filesystem::exists(themePath))
         state.uiTheme->LoadFromFile(themePath);
     state.uiContext.SetTheme(state.uiTheme);
+    state.uiContext.SetTraceStateChanges(state.traceUiChanges);
 
     state.dockSpace = NoxUI::MakeUI<NoxUI::UIDockSpace>();
     state.dockSpace->SetContext(&state.uiContext);
@@ -351,6 +368,23 @@ static void initNoxUI(AppState& state)
 
     // Populate dockable demo gallery + telemetry panel
     auto gallery = NoxUI::CreateUIDemoGallery(state.uiContext);
+    if (state.startTab >= 0)
+    {
+        // (the gallery's tab panel: the first one in it)
+        std::vector<NoxUI::UIElement*> open{ gallery.get() };
+        while (!open.empty())
+        {
+            NoxUI::UIElement* element = open.back();
+            open.pop_back();
+            if (auto* tabs = dynamic_cast<NoxUI::UITabPanel*>(element))
+            {
+                tabs->SetActiveTab(static_cast<size_t>(state.startTab));
+                break;
+            }
+            for (auto it = element->GetChildren().rbegin(); it != element->GetChildren().rend(); ++it)
+                open.push_back(it->get());
+        }
+    }
     state.dockSpace->AddPanel("NoxUI Component Gallery", gallery, NoxUI::UIDockDropZone::Center);
     state.dockSpace->AddPanel("NoxRHI Telemetry", buildTelemetryPanel(state), NoxUI::UIDockDropZone::Right, "NoxUI Component Gallery", 0.27f);
 
@@ -478,6 +512,12 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
             state->api = NRI_GRAPHICS_API_VULKAN;
         else if (std::strcmp(argv[i], "--dx12") == 0 || std::strcmp(argv[i], "--d3d12") == 0)
             state->api = NRI_GRAPHICS_API_D3D12;
+        else if (std::strcmp(argv[i], "--tab") == 0 && i + 1 < argc)
+            state->startTab = std::atoi(argv[++i]);
+        else if (std::strcmp(argv[i], "--trace-ui-changes") == 0)
+            state->traceUiChanges = true;
+        else if (std::strcmp(argv[i], "--no-ui-cache") == 0)
+            state->uiCacheEnabled = false;
         else if (std::strcmp(argv[i], "--no-viewports") == 0)
             state->enableViewports = false;
     }
@@ -684,8 +724,12 @@ SDL_AppResult SDL_AppIterate(void* appstate)
             return SDL_APP_CONTINUE;
         }
 
-        // Update telemetry labels
-        if (state->telemetryFpsLabel)
+        // Update telemetry labels (four times a second: readable, and the frames between can be idle)
+        const auto telemetryNow = std::chrono::steady_clock::now();
+        const bool telemetryDue = std::chrono::duration<double>(telemetryNow - state->lastTelemetry).count() >= 0.25;
+        if (telemetryDue)
+            state->lastTelemetry = telemetryNow;
+        if (state->telemetryFpsLabel && telemetryDue)
         {
             char buf[96]{};
             // (the frame time is one frame to the next -- waiting for the GPU and the swapchain included; the UI's CPU work is
@@ -695,10 +739,12 @@ SDL_AppResult SDL_AppIterate(void* appstate)
                           100.0 * static_cast<double>(state->uiContext.GetSkippedFrameCount()) / static_cast<double>(frames));
             state->telemetryFpsLabel->Text = buf;
         }
-        if (state->telemetryGpuLabel)
+        if (state->telemetryGpuLabel && telemetryDue)
         {
-            char buf[96]{};
-            std::snprintf(buf, sizeof(buf), "GPU Frame: %.3f ms (instant: %.3f ms)", gpuAvgMs, state->profilerState.lastGpuFrameMs);
+            char buf[128]{};
+            const uint64_t frames = std::max<uint64_t>(state->frameNumber, 1);
+            std::snprintf(buf, sizeof(buf), "GPU Frame: %.3f ms (instant: %.3f ms) | UI redrawn: %.0f%% of frames", gpuAvgMs,
+                          state->profilerState.lastGpuFrameMs, 100.0 * static_cast<double>(state->uiCacheRedraws) / static_cast<double>(frames));
             state->telemetryGpuLabel->Text = buf;
         }
 
@@ -721,26 +767,110 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 
         const NoxUI_NoxRHIDrawData mainDrawData = NoxUI_ImplNoxRHI_PrepareDrawData(state->uiDrawList, frameSlot);
 
+        // The UI's own texture (UI cache): the swapchain's format and size; made again when the size changes.
+        const bool useUiCache = state->uiCacheEnabled && state->api != NRI_GRAPHICS_API_NONE;
+        if (useUiCache && (!state->uiCache.handle() || state->uiCacheExtent.width != extent.width || state->uiCacheExtent.height != extent.height))
+        {
+            state->device.waitIdle(); // (the old texture may still be read by a frame in flight)
+            if (state->uiCache.handle())
+            {
+                state->resourceHeap.unregisterTexture(state->uiCacheSlot);
+                state->uiCache.reset();
+            }
+            state->uiCache = state->device.createTexture({
+                .width = extent.width,
+                .height = extent.height,
+                .arrayLayers = 1,
+                .mipLevels = 1,
+                .sampleCount = 1,
+                .usage = NRI_TEXTURE_USAGE_COLOR_ATTACHMENT, // (sampled too: Vulkan adds eSampled, D3D12 render targets allow shader reads)
+                .format = NRI_FORMAT_SURFACE
+            });
+            state->resourceHeap.registerTexture(state->uiCache, NRI_TEXTURE_USAGE_SHADER_RESOURCE);
+            state->uiCacheSlot = state->uiCache.getDescriptorSlot();
+            state->uiCacheExtent = extent;
+            state->uiCacheValid = false;
+        }
+        // Redrawn when the draw list or the clear colour changed (an idle UpdateAndRender keeps the list's revision).
+        const bool redrawUi = !useUiCache || !state->uiCacheValid || state->uiDrawList.GetRevision() != state->uiCacheRevision ||
+                              state->clearColor != state->uiCacheClear;
+        if (redrawUi)
+            ++state->uiCacheRedraws;
+
         state->renderGraph.Reset({ state->frameNumber, extent, extent });
 
-        state->renderGraph.AddPass("NoxUIUpload", nri::RGPassFlags::NeverCull,
-            [](nri::RGBuilder&) {},
-            [mainDrawData](nri::RGPassContext& ctx)
-            {
-                NoxUI_ImplNoxRHI_CopyData(ctx.Cmd(), mainDrawData);
-            });
+        if (redrawUi)
+        {
+            state->renderGraph.AddPass("NoxUIUpload", nri::RGPassFlags::NeverCull,
+                [](nri::RGBuilder&) {},
+                [mainDrawData](nri::RGPassContext& ctx)
+                {
+                    NoxUI_ImplNoxRHI_CopyData(ctx.Cmd(), mainDrawData);
+                });
+        }
 
-        state->renderGraph.AddPass("NoxUIOverlay", nri::RGPassFlags::Raster,
-            [&](nri::RGBuilder& b)
+        if (!useUiCache)
+        {
+            state->renderGraph.AddPass("NoxUIOverlay", nri::RGPassFlags::Raster,
+                [&](nri::RGBuilder& b)
+                {
+                    b.SwapchainTarget(state->swapchain, imageIndex, NRI_LOAD_OP_CLEAR, NRI_STORE_OP_STORE,
+                                      { state->clearColor[0], state->clearColor[1], state->clearColor[2], 1.0f });
+                    b.SetRenderArea(extent, nri::RGViewport::None);
+                },
+                [mainDrawData](nri::RGPassContext& ctx)
+                {
+                    NoxUI_ImplNoxRHI_RenderDrawData(ctx.Cmd(), mainDrawData);
+                });
+        }
+        else
+        {
+            const nri::RGTexture cache = state->renderGraph.ImportTexture("NoxUICache", state->uiCache);
+            if (redrawUi)
             {
-                b.SwapchainTarget(state->swapchain, imageIndex, NRI_LOAD_OP_CLEAR, NRI_STORE_OP_STORE,
-                                  { state->clearColor[0], state->clearColor[1], state->clearColor[2], 1.0f });
-                b.SetRenderArea(extent, nri::RGViewport::None);
-            },
-            [mainDrawData](nri::RGPassContext& ctx)
-            {
-                NoxUI_ImplNoxRHI_RenderDrawData(ctx.Cmd(), mainDrawData);
-            });
+                // Over an opaque clear the UI pipeline's alpha (src + dst * (1 - src)) stays 1: the texture is opaque, and the
+                // quad below copies it to the swapchain as it would have been drawn there.
+                state->renderGraph.AddPass("NoxUIToCache", nri::RGPassFlags::Raster,
+                    [&](nri::RGBuilder& b)
+                    {
+                        b.ColorTarget(cache, NRI_LOAD_OP_CLEAR, NRI_STORE_OP_STORE,
+                                      { state->clearColor[0], state->clearColor[1], state->clearColor[2], 1.0f });
+                        b.SetRenderArea(extent, nri::RGViewport::None);
+                    },
+                    [mainDrawData](nri::RGPassContext& ctx)
+                    {
+                        NoxUI_ImplNoxRHI_RenderDrawData(ctx.Cmd(), mainDrawData);
+                    });
+                state->uiCacheRevision = state->uiDrawList.GetRevision();
+                state->uiCacheClear = state->clearColor;
+                state->uiCacheValid = true;
+            }
+
+            // The texture on the swapchain: one textured quad over the whole target, through the same pipeline.
+            const glm::vec2 size{ static_cast<float>(extent.width), static_cast<float>(extent.height) };
+            state->uiCompositeList.Clear(size);
+            state->uiCompositeList.AddTexturedQuad({ 0.0f, 0.0f }, size, static_cast<NoxUI::UITextureID>(state->uiCacheSlot));
+            constexpr uint32_t kCompositeViewportSlot = 0x7FFFFFFFu; // (its own geometry buffers in the backend)
+            const NoxUI_NoxRHIDrawData compositeData = NoxUI_ImplNoxRHI_PrepareDrawData(state->uiCompositeList, frameSlot, kCompositeViewportSlot);
+            state->renderGraph.AddPass("NoxUICompositeUpload", nri::RGPassFlags::NeverCull,
+                [](nri::RGBuilder&) {},
+                [compositeData](nri::RGPassContext& ctx)
+                {
+                    NoxUI_ImplNoxRHI_CopyData(ctx.Cmd(), compositeData);
+                });
+            state->renderGraph.AddPass("NoxUIComposite", nri::RGPassFlags::Raster,
+                [&](nri::RGBuilder& b)
+                {
+                    b.Read(cache, nri::RGTextureAccess::Sampled);
+                    b.SwapchainTarget(state->swapchain, imageIndex, NRI_LOAD_OP_CLEAR, NRI_STORE_OP_STORE,
+                                      { state->clearColor[0], state->clearColor[1], state->clearColor[2], 1.0f });
+                    b.SetRenderArea(extent, nri::RGViewport::None);
+                },
+                [compositeData](nri::RGPassContext& ctx)
+                {
+                    NoxUI_ImplNoxRHI_RenderDrawData(ctx.Cmd(), compositeData);
+                });
+        }
 
         state->renderGraph.Compile();
         const auto submissions = state->renderGraph.Execute(frameSlot);
@@ -789,6 +919,7 @@ void SDL_AppQuit(void* appstate, SDL_AppResult result)
             state->renderGraph.ReleaseResources();
         }
         shutdownNoxUI(*state);
+        state->uiCache.reset();
         state->gpuProfiler.reset();
         state->samplerHeap.reset();
         state->resourceHeap.reset();
@@ -797,6 +928,14 @@ void SDL_AppQuit(void* appstate, SDL_AppResult result)
         if (state->window)
             SDL_DestroyWindow(state->window);
 
+        std::printf("[UIDemo] %u frames: UI idle (layout and paint skipped) in %llu, UI redrawn on the GPU in %llu%s\n", state->frameNumber,
+                    static_cast<unsigned long long>(state->uiContext.GetSkippedFrameCount()),
+                    static_cast<unsigned long long>(state->uiCacheRedraws), state->uiCacheEnabled ? "" : " (UI cache off)");
+        using Reason = NoxUI::UIContext::DrawReason;
+        const auto count = [&](Reason r) { return static_cast<unsigned long long>(state->uiContext.GetDrawReasonCount(r)); };
+        std::printf("[UIDemo] UI frames drawn because of: input / changes %llu, state changed %llu, incomplete fingerprint %llu%s%s, "
+                    "draw list changed %llu\n", count(Reason::Changed), count(Reason::StateChanged), count(Reason::Incomplete),
+                    count(Reason::Incomplete) ? " -- class " : "", state->uiContext.GetIncompleteClassName(), count(Reason::DrawListChanged));
         const bool hadFailure = state->failed || result == SDL_APP_FAILURE || g_validationErrors > 0;
         delete state;
         if (hadFailure)

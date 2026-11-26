@@ -98,6 +98,10 @@ namespace NoxUI
         // An element whose class does not fingerprint all of its own state was seen (a widget class that does not override
         // HashState / StateHashClass, a subclass that adds fields): nothing proves the frame unchanged, so it is drawn.
         bool Complete = true;
+        // The first element whose class does not (for UIContext::GetLastDrawReason: the class to give a fingerprint).
+        const std::type_info* IncompleteType = nullptr;
+        // Tracing (UIContext::SetTraceStateChanges): each element's own fingerprint, to name the ones that changed.
+        std::vector<std::pair<const void*, uint64_t>>* Trace = nullptr;
 
     private:
         // Four lanes, word by word in turn: four independent multiply chains instead of one (a fingerprint pass per frame).

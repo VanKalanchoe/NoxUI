@@ -599,11 +599,18 @@ namespace NoxUI
         // holds what it drew -- the frame would draw the same, so it is not drawn (SetIncremental). Verify mode draws it and compares.
         const bool track = m_Incremental || m_VerifyMode;
         bool complete = false;
-        const uint64_t before = track ? HashFrame(viewportSize, complete) : 0;
+        const uint64_t before = track ? HashFrame(viewportSize, dt, complete) : 0;
         // (the last frame -- drawn in full, or itself idle -- began from this same fingerprint: a full frame and the syncs after it
         // came back to the state they started from, a fixed point; drawing it again would draw the same and change nothing)
-        const bool idle = track && complete && !changed && m_LastFrameStationary && before == m_LastStateHash &&
-                          &drawList == m_LastOutputList && drawList.GetRevision() == m_LastOutputRevision;
+        const bool sameList = &drawList == m_LastOutputList && drawList.GetRevision() == m_LastOutputRevision;
+        const bool idle = track && complete && !changed && m_LastFrameStationary && before == m_LastStateHash && sameList;
+        m_LastDrawReason = idle ? DrawReason::Idle
+                         : !track ? DrawReason::Disabled
+                         : changed ? DrawReason::Changed
+                         : !complete ? DrawReason::Incomplete
+                         : (!m_LastFrameStationary || before != m_LastStateHash) ? DrawReason::StateChanged
+                         : DrawReason::DrawListChanged;
+        ++m_DrawReasonCounts[static_cast<size_t>(m_LastDrawReason)];
         m_LastStateHash = before;
         m_LastFrameStationary = track && complete;
         m_LastFrameSkipped = false;
@@ -611,6 +618,7 @@ namespace NoxUI
         bool verifying = false;
         if (idle && !m_VerifyMode)
         {
+            AdvanceHoverTime(dt); // (as the frame would: the tooltip comes on the frame it would have)
             m_LastFrameSkipped = true;
             ++m_SkippedFrames;
             return;
@@ -643,10 +651,10 @@ namespace NoxUI
         if (m_Overlay)
             m_Overlay->PaintRecursive(drawList, *m_Theme);
 
+        AdvanceHoverTime(dt);
         if (m_Hovered && !m_Captured)
         {
-            m_HoverTime += dt;
-            if (m_HoverTime >= 0.45f)
+            if (m_HoverTime >= kTooltipDelay)
             {
                 std::string_view tip;
                 for (UIElement* cur = m_Hovered.get(); cur != nullptr; cur = cur->GetParent())
@@ -685,10 +693,6 @@ namespace NoxUI
                     drawList.AddText(tip, nullptr, pos + pad, fontSize, tipStyle.TextColor);
                 }
             }
-        }
-        else
-        {
-            m_HoverTime = 0.0f;
         }
 
         if (m_DragActive)
@@ -750,7 +754,7 @@ namespace NoxUI
                                   (prims.empty() || std::memcmp(prims.data(), keptPrims.data(), prims.size() * sizeof(UIPrimitive)) == 0) &&
                                   (clips.empty() || std::memcmp(clips.data(), keptClips.data(), clips.size() * sizeof(UIClipRect)) == 0);
             bool completeAfter = false;
-            const bool sameState = HashFrame(viewportSize, completeAfter) == before;
+            const bool sameState = HashFrame(viewportSize, dt, completeAfter) == before;
             if (!sameList || !sameState)
             {
                 ++m_VerifyFailures;
@@ -765,7 +769,29 @@ namespace NoxUI
         }
     }
 
-    uint64_t UIContext::HashFrame(const UIVec2& viewportSize, bool& complete) const
+    void UIContext::AdvanceHoverTime(float dt)
+    {
+        if (m_Hovered && !m_Captured)
+            m_HoverTime += dt;
+        else
+            m_HoverTime = 0.0f;
+    }
+
+    bool UIContext::TooltipVisibleThisFrame(float dt) const
+    {
+        // What the frame's tooltip code decides: the pointer resting long enough (the timer as the frame advances it) on an element
+        // with a tooltip, it or an ancestor. The timer itself is not fingerprinted: a skipped frame advances it the same way.
+        if (!m_Hovered || m_Captured || m_HoverTime + dt < kTooltipDelay)
+            return false;
+        for (const UIElement* cur = m_Hovered.get(); cur != nullptr; cur = cur->GetParent())
+        {
+            if (!cur->Tooltip.empty())
+                return true;
+        }
+        return false;
+    }
+
+    uint64_t UIContext::HashFrame(const UIVec2& viewportSize, float dt, bool& complete)
     {
         UIStateHasher h;
         const UIGlyphCache& glyphs = UIGlyphCache::Get();
@@ -774,18 +800,50 @@ namespace NoxUI
           glyphs.ResetRequested(), static_cast<uint64_t>(glyphs.GetTextureID()), static_cast<const void*>(defaultFont.get()),
           defaultFont ? static_cast<uint64_t>(defaultFont->GetAtlasTextureID()) : 0ull);
         h(static_cast<const void*>(m_Hovered.get()), static_cast<const void*>(m_Captured.get()), static_cast<const void*>(m_Focused.get()),
-          m_LastMousePos, m_Modifiers, s_Modifiers, s_ButtonsHeld, std::min(m_HoverTime, 0.45f), m_DragPending, m_DragActive, m_DragOrigin,
+          m_LastMousePos, m_Modifiers, s_Modifiers, s_ButtonsHeld, TooltipVisibleThisFrame(dt), m_DragPending, m_DragActive, m_DragOrigin,
           m_ActivePayload.Type, m_ActivePayload.Text, m_ActivePayload.UserId, m_ActivePayload.Ids, m_ToastBottomInset);
         h.Add(m_Toasts.size());
         for (const ToastItem& toast : m_Toasts)
             h(toast.Note.Severity, toast.Note.Title, toast.Note.Message, toast.Note.DurationSeconds, toast.Remaining, toast.Age, toast.HasAccent,
               toast.Accent, toast.Bounds);
+        const uint64_t contextHash = h.Value();
         h(static_cast<const void*>(m_Root.get()), static_cast<const void*>(m_Overlay.get()));
+        if (m_TraceStateChanges)
+        {
+            m_TraceNow.clear();
+            h.Trace = &m_TraceNow;
+        }
         if (m_Root)
             m_Root->HashTree(h);
         if (m_Overlay)
             m_Overlay->HashTree(h);
+        if (m_TraceStateChanges)
+        {
+            // (the context's own state as one entry, then every element whose own fingerprint is new or changed)
+            m_TraceNow.emplace_back(static_cast<const void*>(this), contextHash);
+            std::string changes;
+            int listed = 0;
+            for (const auto& [element, hash] : m_TraceNow)
+            {
+                const auto found = std::find_if(m_TraceLast.begin(), m_TraceLast.end(), [element](const auto& e) { return e.first == element; });
+                if (found != m_TraceLast.end() && found->second == hash)
+                    continue;
+                if (++listed > 8)
+                    continue;
+                if (element == this)
+                    changes += " [context state]";
+                else
+                {
+                    const auto* e = static_cast<const UIElement*>(element);
+                    changes += std::string(" [") + typeid(*e).name() + " '" + e->StyleClass + "'" + (e->Name.empty() ? "" : " " + e->Name) + "]";
+                }
+            }
+            if (listed > 0)
+                LogMessage(LogLevel::Info, "UIContext trace: " + std::to_string(listed) + " changed:" + changes);
+            m_TraceLast.swap(m_TraceNow);
+        }
         complete = h.Complete;
+        m_IncompleteType = h.IncompleteType;
         return h.Value();
     }
 

@@ -97,6 +97,23 @@ namespace NoxUI
         void SetVerifyMode(bool enabled) { m_VerifyMode = enabled; }
         uint64_t GetVerifyFailureCount() const { return m_VerifyFailures; }
         uint64_t GetVerifiedFrameCount() const { return m_VerifiedFrames; }
+        // Why the last frame was drawn in full (Idle when it was not): to find what keeps a UI from being idle.
+        enum class DrawReason : uint8_t
+        {
+            Idle,           // not drawn: the last draw list was kept
+            Disabled,       // SetIncremental(false)
+            Changed,        // input, a deferred action, a theme reload, RequestRedraw, a new root / overlay / theme / toast
+            Incomplete,     // an element whose class has no complete fingerprint (GetIncompleteClassName)
+            StateChanged,   // the fingerprint differs from the last frame's (a value, an animation, a timer moved)
+            DrawListChanged // `drawList` is not the list drawn last, or something changed it since
+        };
+        DrawReason GetLastDrawReason() const { return m_LastDrawReason; }
+        uint64_t GetDrawReasonCount(DrawReason reason) const { return m_DrawReasonCounts[static_cast<size_t>(reason)]; }
+        // The class of the element that made the last fingerprint incomplete (typeid name; empty when complete).
+        const char* GetIncompleteClassName() const { return m_IncompleteType ? m_IncompleteType->name() : ""; }
+        // Debugging: each frame, the elements whose own fingerprint changed since the last frame are logged (class, StyleClass,
+        // Name) -- what keeps the UI from being idle. Slow; not for shipping.
+        void SetTraceStateChanges(bool enabled) { m_TraceStateChanges = enabled; }
 
         UIElement* GetHovered() const { return m_Hovered.get(); }
         UIElement* GetFocused() const { return m_Focused.get(); }
@@ -126,7 +143,10 @@ namespace NoxUI
         const UIDragPayload& GetDragPayload() const { return m_ActivePayload; }
 
     private:
-        uint64_t HashFrame(const UIVec2& viewportSize, bool& complete) const;
+        uint64_t HashFrame(const UIVec2& viewportSize, float dt, bool& complete);
+        void AdvanceHoverTime(float dt);
+        bool TooltipVisibleThisFrame(float dt) const;
+        static constexpr float kTooltipDelay = 0.45f; // (seconds the pointer rests before a tooltip shows)
         bool IsInTree(const UIElement* element) const;
         void DropDetachedInput();
         void UpdateHover(const UIVec2& pos);
@@ -191,6 +211,11 @@ namespace NoxUI
         bool m_VerifyMode = false;
         uint64_t m_VerifyFailures = 0;
         uint64_t m_VerifiedFrames = 0;
+        DrawReason m_LastDrawReason = DrawReason::Changed;
+        uint64_t m_DrawReasonCounts[6]{};
+        const std::type_info* m_IncompleteType = nullptr;
+        bool m_TraceStateChanges = false;
+        std::vector<std::pair<const void*, uint64_t>> m_TraceLast, m_TraceNow;
     };
 
     // A theme token's colour from the theme in use -- the context handling the current event or frame, else the one drawn last (a 3D

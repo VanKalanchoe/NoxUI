@@ -88,6 +88,10 @@ const NoxUI_NoxRHIDrawData drawData = NoxUI_ImplNoxRHI_PrepareDrawData(drawList,
   (a subclass with fields of its own) never lets a frame be skipped: nothing breaks, it just keeps the old cost. A widget that paints
   from callbacks fingerprints its paint output (`HashPaintOutput`); one that polls outside data every frame does it in `OnPoll` (with
   the syncs, before the fingerprint). A painter reading state outside the UI calls `UIContext::RequestRedraw()` when it changes.
+- **Why a frame was drawn.** `UIContext::GetLastDrawReason` / `GetDrawReasonCount` (input or a change, changed state, an incomplete
+  fingerprint -- `GetIncompleteClassName` -- or a changed draw list); `SetTraceStateChanges(true)` logs, per frame, the elements whose own
+  fingerprint changed. The tooltip timer is not part of the fingerprint, only whether the tooltip shows this frame: a pointer resting on
+  an element no longer keeps frames drawn for the 0.45 s delay (a skipped frame advances the timer as a drawn one does).
 - **Verified.** `UIFrameReplay` (tests/) replays the gallery headless with seeded input -- tab switches, clicks, drags, wheel, keys,
   typing, idle stretches, resizes, toasts -- and hashes each frame's draw list: `--record` / `--compare` check one build against
   another frame by frame; `--verify` draws every frame that would be skipped and compares it with what was kept. Eight seeds
@@ -150,7 +154,17 @@ build\Debug\UIDemo.exe --dx12 --frames 10 --resize-test
 build\Debug\UIDemo.exe --vk --frames 10 --minimize-test
 build\Debug\UIDemo.exe --vk --frames 5 --screenshot screenshot_vk.png
 build\Debug\UIDemo.exe --dx12 --frames 5 --screenshot screenshot_dx12.png
+build\Release\UIDemo.exe --vk --tab 1                      :: open the gallery on tab 1 (Inputs & Data)
+build\Release\UIDemo.exe --vk --trace-ui-changes            :: log the elements that keep the UI from being idle
+build\Release\UIDemo.exe --vk --no-ui-cache                 :: draw the UI on the GPU every frame (no cached texture)
 ```
+On exit UIDemo prints how many frames were idle, how many redrew the UI on the GPU, and why the others were drawn
+(`UIContext::GetDrawReasonCount`: input, changed state, an incomplete fingerprint -- with the class -- or a changed draw list).
+
+**The UI cache (UIDemo).** The UI is drawn into a texture of its own only when its draw list changed (`UIDrawList::GetRevision`, which an
+idle `UpdateAndRender` leaves as it was); other frames show that texture with one full-screen textured quad through the same pipeline.
+Over an opaque clear the pipeline's alpha (`src + dst * (1 - src)`) stays 1, so the texture is opaque and the quad reproduces what drawing
+to the swapchain gave. The telemetry readouts change four times a second (every frame, their text alone kept every frame from being idle).
 
 ---
 
