@@ -155,10 +155,12 @@ build\Debug\UIDemo.exe --vk --frames 10 --minimize-test
 build\Debug\UIDemo.exe --vk --frames 5 --screenshot screenshot_vk.png
 build\Debug\UIDemo.exe --dx12 --frames 5 --screenshot screenshot_dx12.png
 build\Release\UIDemo.exe --vk --tab 1                      :: open the gallery on tab 1 (Inputs & Data)
-build\Release\UIDemo.exe --vk --trace-ui-changes            :: log the elements that keep the UI from being idle
+build\Release\UIDemo.exe --vk --trace-ui-changes trace.txt  :: log the elements that keep the UI from being idle (to the file;
+                                                            :: without a file, to the console); a summary at exit
 build\Release\UIDemo.exe --vk --no-ui-cache                 :: draw the UI on the GPU every frame (no cached texture)
 ```
-On exit UIDemo prints how many frames were idle, how many redrew the UI on the GPU, and why the others were drawn
+The telemetry splits its readouts by kind of frame (an average over a mix jumps): UI CPU on drawn and on idle frames, GPU time of frames
+that redrew the UI and of frames that only composited it -- each averaged over the last quarter second. On exit UIDemo prints how many frames were idle, how many redrew the UI on the GPU, and why the others were drawn
 (`UIContext::GetDrawReasonCount`: input, changed state, an incomplete fingerprint -- with the class -- or a changed draw list).
 
 **The UI cache (UIDemo).** The UI is drawn into a texture of its own only when its draw list changed (`UIDrawList::GetRevision`, which an

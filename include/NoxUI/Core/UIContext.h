@@ -110,7 +110,7 @@ namespace NoxUI
         DrawReason GetLastDrawReason() const { return m_LastDrawReason; }
         uint64_t GetDrawReasonCount(DrawReason reason) const { return m_DrawReasonCounts[static_cast<size_t>(reason)]; }
         // The class of the element that made the last fingerprint incomplete (typeid name; empty when complete).
-        const char* GetIncompleteClassName() const { return m_IncompleteType ? m_IncompleteType->name() : ""; }
+        const char* GetIncompleteClassName() const { return m_IncompleteClassName.c_str(); }
         // Debugging: each frame, the elements whose own fingerprint changed since the last frame are logged (class, StyleClass,
         // Name) -- what keeps the UI from being idle. Slow; not for shipping.
         void SetTraceStateChanges(bool enabled) { m_TraceStateChanges = enabled; }
@@ -214,6 +214,7 @@ namespace NoxUI
         DrawReason m_LastDrawReason = DrawReason::Changed;
         uint64_t m_DrawReasonCounts[6]{};
         const std::type_info* m_IncompleteType = nullptr;
+        std::string m_IncompleteClassName;
         bool m_TraceStateChanges = false;
         std::vector<std::pair<const void*, uint64_t>> m_TraceLast, m_TraceNow;
     };

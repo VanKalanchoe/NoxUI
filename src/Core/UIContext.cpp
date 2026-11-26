@@ -2,6 +2,10 @@
 
 #include <algorithm>
 #include <cstring>
+#if defined(__GNUG__)
+    #include <cxxabi.h>
+    #include <cstdlib>
+#endif
 #include <string>
 
 #include "NoxUI/Core/UILog.h"
@@ -15,6 +19,24 @@ namespace NoxUI
 {
     namespace
     {
+        // A class name as written (GCC / Clang typeid names are mangled; MSVC's are readable already).
+        std::string ClassName(const std::type_info& type)
+        {
+#if defined(__GNUG__)
+            int status = 0;
+            char* readable = abi::__cxa_demangle(type.name(), nullptr, nullptr, &status);
+            std::string name = status == 0 && readable ? readable : type.name();
+            std::free(readable);
+            return name;
+#else
+            std::string name = type.name();
+            for (const char* prefix : { "class ", "struct " })
+                if (name.rfind(prefix, 0) == 0)
+                    name.erase(0, std::strlen(prefix));
+            return name;
+#endif
+        }
+
         struct ScopedCurrentContext
         {
             UIContext*& Slot;
@@ -835,7 +857,7 @@ namespace NoxUI
                 else
                 {
                     const auto* e = static_cast<const UIElement*>(element);
-                    changes += std::string(" [") + typeid(*e).name() + " '" + e->StyleClass + "'" + (e->Name.empty() ? "" : " " + e->Name) + "]";
+                    changes += " [" + ClassName(typeid(*e)) + " '" + e->StyleClass + "'" + (e->Name.empty() ? "" : " " + e->Name) + "]";
                 }
             }
             if (listed > 0)
@@ -843,6 +865,8 @@ namespace NoxUI
             m_TraceLast.swap(m_TraceNow);
         }
         complete = h.Complete;
+        if (h.IncompleteType != m_IncompleteType)
+            m_IncompleteClassName = h.IncompleteType ? ClassName(*h.IncompleteType) : std::string();
         m_IncompleteType = h.IncompleteType;
         return h.Value();
     }

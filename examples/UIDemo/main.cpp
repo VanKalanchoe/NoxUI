@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <map>
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
@@ -51,8 +52,30 @@ static void onRgLog(nri::RGLogLevel level, std::string_view message, void* userD
         ++g_validationErrors;
 }
 
+// --trace-ui-changes [file]: the trace lines go to the file (not the console), and the elements named are counted for a summary at exit.
+static FILE* g_traceFile = nullptr;
+static std::map<std::string, uint64_t> g_traceCounts;
+static uint64_t g_traceFrames = 0;
+
 static void onUILog(NoxUI::LogLevel level, std::string_view message)
 {
+    if (message.rfind("UIContext trace:", 0) == 0)
+    {
+        ++g_traceFrames;
+        for (size_t open = message.find(" ["); open != std::string_view::npos; open = message.find(" [", open + 2))
+        {
+            const size_t close = message.find(']', open);
+            if (close == std::string_view::npos)
+                break;
+            ++g_traceCounts[std::string(message.substr(open + 2, close - open - 2))];
+        }
+        if (g_traceFile)
+        {
+            std::fprintf(g_traceFile, "%.*s\n", static_cast<int>(message.size()), message.data());
+            return;
+        }
+    }
+
     const char* tag = level == NoxUI::LogLevel::Error ? "ERROR" : level == NoxUI::LogLevel::Warn ? "WARN" : "INFO";
     std::fprintf(stderr, "[UIDemo][UI][%s] %.*s\n", tag, static_cast<int>(message.size()), message.data());
     if (level == NoxUI::LogLevel::Error)
@@ -243,7 +266,14 @@ namespace
         // The UI drawn into a texture of its own and redrawn only when its draw list changed (UIDrawList::GetRevision, which an idle
         // UpdateAndRender leaves as it was): other frames show the texture with one full-screen quad. --no-ui-cache: drawn every frame.
         bool uiCacheEnabled = true;
-        bool traceUiChanges = false; // (--trace-ui-changes: log what keeps the UI from being idle)
+        bool traceUiChanges = false; // (--trace-ui-changes [file]: log what keeps the UI from being idle)
+        // Telemetry over the last quarter second, split by kind of frame (an average over a mix of idle and drawn frames jumps):
+        // UI CPU on drawn and on idle frames, GPU time of frames that redrew the UI and of frames that only composited it.
+        double uiDrawnSum = 0.0, uiIdleSum = 0.0, gpuRedrawSum = 0.0, gpuCompositeSum = 0.0;
+        uint32_t uiDrawnCount = 0, uiIdleCount = 0, gpuRedrawCount = 0, gpuCompositeCount = 0;
+        double shownUiDrawn = 0.0, shownUiIdle = 0.0, shownGpuRedraw = 0.0, shownGpuComposite = 0.0;
+        std::array<bool, kFramesInFlight> slotRedrewUi{}; // (what the frame last run in each slot did: its GPU time comes back later)
+        std::array<bool, kFramesInFlight> slotUsed{};
         int startTab = -1;           // (--tab N: the gallery opens on tab N)
         nri::Texture uiCache;
         uint32_t uiCacheSlot = 0;
@@ -515,7 +545,15 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
         else if (std::strcmp(argv[i], "--tab") == 0 && i + 1 < argc)
             state->startTab = std::atoi(argv[++i]);
         else if (std::strcmp(argv[i], "--trace-ui-changes") == 0)
+        {
             state->traceUiChanges = true;
+            if (i + 1 < argc && argv[i + 1][0] != '-')
+            {
+                g_traceFile = std::fopen(argv[++i], "w");
+                if (!g_traceFile)
+                    std::fprintf(stderr, "[UIDemo] cannot write %s; the trace goes to the console\n", argv[i]);
+            }
+        }
         else if (std::strcmp(argv[i], "--no-ui-cache") == 0)
             state->uiCacheEnabled = false;
         else if (std::strcmp(argv[i], "--no-viewports") == 0)
@@ -728,14 +766,29 @@ SDL_AppResult SDL_AppIterate(void* appstate)
         const auto telemetryNow = std::chrono::steady_clock::now();
         const bool telemetryDue = std::chrono::duration<double>(telemetryNow - state->lastTelemetry).count() >= 0.25;
         if (telemetryDue)
+        {
             state->lastTelemetry = telemetryNow;
+            const auto average = [](double& sum, uint32_t& count, double& shown)
+            {
+                if (count > 0)
+                    shown = sum / count;
+                sum = 0.0;
+                count = 0;
+            };
+            average(state->uiDrawnSum, state->uiDrawnCount, state->shownUiDrawn);
+            average(state->uiIdleSum, state->uiIdleCount, state->shownUiIdle);
+            average(state->gpuRedrawSum, state->gpuRedrawCount, state->shownGpuRedraw);
+            average(state->gpuCompositeSum, state->gpuCompositeCount, state->shownGpuComposite);
+        }
         if (state->telemetryFpsLabel && telemetryDue)
         {
             char buf[96]{};
             // (the frame time is one frame to the next -- waiting for the GPU and the swapchain included; the UI's CPU work is
             // UpdateAndRender alone)
             const uint64_t frames = std::max<uint64_t>(state->frameNumber, 1);
-            std::snprintf(buf, sizeof(buf), "FPS: %.1f (frame: %.2f ms) | UI CPU: %.3f ms | idle: %.0f%%", fps, cpuAvgMs, uiAvgMs,
+            (void)uiAvgMs;
+            std::snprintf(buf, sizeof(buf), "FPS: %.0f (frame %.2f ms) | UI CPU: drawn %.3f ms, idle %.3f ms | idle %.0f%%", fps, cpuAvgMs,
+                          state->shownUiDrawn, state->shownUiIdle,
                           100.0 * static_cast<double>(state->uiContext.GetSkippedFrameCount()) / static_cast<double>(frames));
             state->telemetryFpsLabel->Text = buf;
         }
@@ -743,8 +796,9 @@ SDL_AppResult SDL_AppIterate(void* appstate)
         {
             char buf[128]{};
             const uint64_t frames = std::max<uint64_t>(state->frameNumber, 1);
-            std::snprintf(buf, sizeof(buf), "GPU Frame: %.3f ms (instant: %.3f ms) | UI redrawn: %.0f%% of frames", gpuAvgMs,
-                          state->profilerState.lastGpuFrameMs, 100.0 * static_cast<double>(state->uiCacheRedraws) / static_cast<double>(frames));
+            (void)gpuAvgMs;
+            std::snprintf(buf, sizeof(buf), "GPU: UI redraw %.3f ms, composite only %.3f ms | UI redrawn %.0f%% of frames", state->shownGpuRedraw,
+                          state->shownGpuComposite, 100.0 * static_cast<double>(state->uiCacheRedraws) / static_cast<double>(frames));
             state->telemetryGpuLabel->Text = buf;
         }
 
@@ -755,6 +809,16 @@ SDL_AppResult SDL_AppIterate(void* appstate)
             { static_cast<float>(extent.width), static_cast<float>(extent.height) },
             dtSec);
         state->lastUiMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - uiStart).count();
+        if (state->uiContext.WasLastFrameSkipped())
+        {
+            state->uiIdleSum += state->lastUiMs;
+            ++state->uiIdleCount;
+        }
+        else
+        {
+            state->uiDrawnSum += state->lastUiMs;
+            ++state->uiDrawnCount;
+        }
 
         if (state->telemetryPrimsLabel)
         {
@@ -874,6 +938,22 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 
         state->renderGraph.Compile();
         const auto submissions = state->renderGraph.Execute(frameSlot);
+        // (Execute read back the GPU time of the frame that last ran in this slot: filed under what that frame did)
+        if (state->slotUsed[frameSlot] && state->profilerState.lastGpuFrameMs > 0.0)
+        {
+            if (state->slotRedrewUi[frameSlot])
+            {
+                state->gpuRedrawSum += state->profilerState.lastGpuFrameMs;
+                ++state->gpuRedrawCount;
+            }
+            else
+            {
+                state->gpuCompositeSum += state->profilerState.lastGpuFrameMs;
+                ++state->gpuCompositeCount;
+            }
+        }
+        state->slotRedrewUi[frameSlot] = redrawUi;
+        state->slotUsed[frameSlot] = true;
         for (size_t s = 0; s < submissions.size(); ++s)
         {
             const auto& sub = submissions[s];
@@ -931,6 +1011,19 @@ void SDL_AppQuit(void* appstate, SDL_AppResult result)
         std::printf("[UIDemo] %u frames: UI idle (layout and paint skipped) in %llu, UI redrawn on the GPU in %llu%s\n", state->frameNumber,
                     static_cast<unsigned long long>(state->uiContext.GetSkippedFrameCount()),
                     static_cast<unsigned long long>(state->uiCacheRedraws), state->uiCacheEnabled ? "" : " (UI cache off)");
+        if (!g_traceCounts.empty())
+        {
+            std::vector<std::pair<uint64_t, std::string>> top;
+            for (const auto& [name, count] : g_traceCounts)
+                top.emplace_back(count, name);
+            std::sort(top.rbegin(), top.rend());
+            std::printf("[UIDemo] trace: %llu frames had changes; the elements changed most often (in how many of them):\n",
+                        static_cast<unsigned long long>(g_traceFrames));
+            for (size_t i = 0; i < std::min<size_t>(top.size(), 12); ++i)
+                std::printf("[UIDemo]   %6llu  %s\n", static_cast<unsigned long long>(top[i].first), top[i].second.c_str());
+        }
+        if (g_traceFile)
+            std::fclose(g_traceFile);
         using Reason = NoxUI::UIContext::DrawReason;
         const auto count = [&](Reason r) { return static_cast<unsigned long long>(state->uiContext.GetDrawReasonCount(r)); };
         std::printf("[UIDemo] UI frames drawn because of: input / changes %llu, state changed %llu, incomplete fingerprint %llu%s%s, "
