@@ -296,6 +296,11 @@ namespace
         // Telemetry over the last quarter second, split by kind of frame (an average over a mix of idle and drawn frames jumps):
         // UI CPU on drawn and on idle frames, GPU time of frames that redrew the UI and of frames that only composited it.
         double uiDrawnSum = 0.0, uiIdleSum = 0.0, gpuRedrawSum = 0.0, gpuCompositeSum = 0.0;
+        // (the same over the whole run, for the summary at exit)
+        double runUiDrawnMs = 0.0, runUiIdleMs = 0.0, runGpuRedrawMs = 0.0, runGpuCompositeMs = 0.0;
+        uint64_t runUiDrawnCount = 0, runUiIdleCount = 0, runGpuRedrawCount = 0, runGpuCompositeCount = 0;
+        std::string commandLine;
+        std::chrono::steady_clock::time_point runStart = std::chrono::steady_clock::now();
         uint32_t uiDrawnCount = 0, uiIdleCount = 0, gpuRedrawCount = 0, gpuCompositeCount = 0;
         double shownUiDrawn = 0.0, shownUiIdle = 0.0, shownGpuRedraw = 0.0, shownGpuComposite = 0.0;
         std::array<bool, kFramesInFlight> slotRedrewUi{}; // (what the frame last run in each slot did: its GPU time comes back later)
@@ -619,6 +624,8 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
 {
     auto state = std::make_unique<AppState>();
     for (int i = 1; i < argc; ++i)
+        state->commandLine += std::string(" ") + argv[i];
+    for (int i = 1; i < argc; ++i)
     {
         if (std::strcmp(argv[i], "--frames") == 0 && i + 1 < argc)
             state->maxFrames = std::atoi(argv[++i]);
@@ -927,11 +934,15 @@ SDL_AppResult SDL_AppIterate(void* appstate)
         if (state->uiContext.WasLastFrameSkipped())
         {
             state->uiIdleSum += state->lastUiMs;
+            state->runUiIdleMs += state->lastUiMs;
+            ++state->runUiIdleCount;
             ++state->uiIdleCount;
         }
         else
         {
             state->uiDrawnSum += state->lastUiMs;
+            state->runUiDrawnMs += state->lastUiMs;
+            ++state->runUiDrawnCount;
             ++state->uiDrawnCount;
             state->partialMeasured += state->uiContext.GetLastMeasuredCount();
             state->partialPainted += state->uiContext.GetLastPaintedCount();
@@ -1082,11 +1093,15 @@ SDL_AppResult SDL_AppIterate(void* appstate)
             if (state->slotRedrewUi[frameSlot])
             {
                 state->gpuRedrawSum += state->profilerState.lastGpuFrameMs;
+                state->runGpuRedrawMs += state->profilerState.lastGpuFrameMs;
+                ++state->runGpuRedrawCount;
                 ++state->gpuRedrawCount;
             }
             else
             {
                 state->gpuCompositeSum += state->profilerState.lastGpuFrameMs;
+                state->runGpuCompositeMs += state->profilerState.lastGpuFrameMs;
+                ++state->runGpuCompositeCount;
                 ++state->gpuCompositeCount;
             }
         }
@@ -1149,24 +1164,72 @@ void SDL_AppQuit(void* appstate, SDL_AppResult result)
         if (state->window)
             SDL_DestroyWindow(state->window);
 
-        std::printf("[UIDemo] %u frames: UI idle (layout and paint skipped) in %llu, UI redrawn on the GPU in %llu%s\n", state->frameNumber,
-                    static_cast<unsigned long long>(state->uiContext.GetSkippedFrameCount()),
-                    static_cast<unsigned long long>(state->uiCacheRedraws), state->uiCacheEnabled ? "" : " (UI cache off)");
+        // The summary: everything the telemetry showed, over the whole run, and what the run did -- printed and written to
+        // UIDemo-summary.txt in the working directory (one file to send instead of numbers typed off the screen).
+        std::string summary;
+        const auto line = [&summary](const char* format, auto... args)
+        {
+            char buf[512];
+            if constexpr (sizeof...(args) == 0)
+                std::snprintf(buf, sizeof(buf), "%s", format);
+            else
+                std::snprintf(buf, sizeof(buf), format, args...);
+            summary += "[UIDemo] ";
+            summary += buf;
+            summary += "\n";
+        };
+        const auto average = [](double sum, uint64_t count) { return count ? sum / static_cast<double>(count) : 0.0; };
+        const uint64_t frames = std::max<uint64_t>(state->frameNumber, 1);
+        const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - state->runStart).count();
+        const char* api = state->api == NRI_GRAPHICS_API_VULKAN ? "Vulkan" : state->api == NRI_GRAPHICS_API_D3D12 ? "D3D12" : "None (no GPU)";
+        line("==== summary ====");
+        line("command line:%s", state->commandLine.c_str());
+        line("API %s, window %dx%d, %u frames in %.1f s (%.0f FPS, %.3f ms a frame)%s", api, state->width, state->height, state->frameNumber, seconds,
+             seconds > 0.0 ? state->frameNumber / seconds : 0.0, state->frameNumber ? 1000.0 * seconds / state->frameNumber : 0.0,
+             state->vsync ? ", vsync" : "");
+        line("UI CPU (UpdateAndRender): drawn %.3f ms (%llu frames), idle %.3f ms (%llu frames) | idle %.0f%% of frames", average(state->runUiDrawnMs, state->runUiDrawnCount),
+             static_cast<unsigned long long>(state->runUiDrawnCount), average(state->runUiIdleMs, state->runUiIdleCount),
+             static_cast<unsigned long long>(state->runUiIdleCount), 100.0 * static_cast<double>(state->uiContext.GetSkippedFrameCount()) / frames);
         {
             const uint64_t drawn = state->frameNumber - std::min<uint64_t>(state->frameNumber, state->uiContext.GetSkippedFrameCount());
             if (drawn > 0 && state->partialFrames)
-                std::printf("[UIDemo] drawn frames: %.1f elements measured, %.1f painted, %.1f copied from the frame before (on average)\n",
-                            static_cast<double>(state->partialMeasured) / drawn, static_cast<double>(state->partialPainted) / drawn,
-                            static_cast<double>(state->partialCopied) / drawn);
+                line("drawn frames: %.1f elements measured, %.1f painted, %.1f copied from the frame before (on average)",
+                     static_cast<double>(state->partialMeasured) / drawn, static_cast<double>(state->partialPainted) / drawn,
+                     static_cast<double>(state->partialCopied) / drawn);
             else if (!state->partialFrames)
-                std::printf("[UIDemo] partial frames off (--no-partial): drawn frames laid out and painted everything\n");
-            if (state->verifyCache)
-                std::printf("[UIDemo] verify-ui-cache: %llu partial redraws compared with drawing everything, %llu differed\n",
-                            static_cast<unsigned long long>(state->uiCacheVerified), static_cast<unsigned long long>(state->uiCacheVerifyFailures));
+                line("partial frames off (--no-partial): drawn frames laid out and painted everything");
+        }
+        if (state->api != NRI_GRAPHICS_API_NONE)
+        {
+            line("GPU frame: UI redraw %.3f ms (%llu frames), composite only %.3f ms (%llu frames) | UI redrawn %.0f%% of frames%s",
+                 average(state->runGpuRedrawMs, state->runGpuRedrawCount), static_cast<unsigned long long>(state->runGpuRedrawCount),
+                 average(state->runGpuCompositeMs, state->runGpuCompositeCount), static_cast<unsigned long long>(state->runGpuCompositeCount),
+                 100.0 * static_cast<double>(state->uiCacheRedraws) / frames, state->uiCacheEnabled ? "" : " (UI cache off: drawn every frame)");
             if (state->uiPartialRedraws > 0)
-                std::printf("[UIDemo] UI cache: %llu of %llu redraws only redrew what changed (%.1f%% of the window on average)\n",
-                            static_cast<unsigned long long>(state->uiPartialRedraws), static_cast<unsigned long long>(state->uiCacheRedraws),
-                            100.0 * state->uiPartialArea / static_cast<double>(state->uiPartialRedraws));
+                line("UI cache: %llu of %llu redraws only redrew what changed (%.1f%% of the window on average)",
+                     static_cast<unsigned long long>(state->uiPartialRedraws), static_cast<unsigned long long>(state->uiCacheRedraws),
+                     100.0 * state->uiPartialArea / static_cast<double>(state->uiPartialRedraws));
+            else if (!state->partialRedraw)
+                line("UI cache: partial redraw off (--no-partial-redraw)");
+            if (state->verifyCache)
+                line("verify-ui-cache: %llu partial redraws compared with drawing everything, %llu differed%s",
+                     static_cast<unsigned long long>(state->uiCacheVerified), static_cast<unsigned long long>(state->uiCacheVerifyFailures),
+                     state->uiCacheVerifyFailures ? " -- FAILED (the frames and pixels are above)" : "");
+            const ProfilerState& ps = state->profilerState;
+            if (ps.frameCount > 0)
+            {
+                line("GPU time per render-graph pass, in the frames it ran (frame %.3f ms on average over %llu frames):", ps.frameTotalMs / ps.frameCount,
+                     static_cast<unsigned long long>(ps.frameCount));
+                for (const auto& [name, total] : ps.passTotals)
+                    line("  %-22s %.3f ms  (%llu frames)", name.c_str(), total.first / total.second, static_cast<unsigned long long>(total.second));
+            }
+        }
+        {
+            using Reason = NoxUI::UIContext::DrawReason;
+            const auto count = [&](Reason r) { return static_cast<unsigned long long>(state->uiContext.GetDrawReasonCount(r)); };
+            line("UI frames drawn because of: input / changes %llu, state changed %llu, incomplete fingerprint %llu%s%s, draw list changed %llu",
+                 count(Reason::Changed), count(Reason::StateChanged), count(Reason::Incomplete), count(Reason::Incomplete) ? " -- class " : "",
+                 state->uiContext.GetIncompleteClassName(), count(Reason::DrawListChanged));
         }
         if (!g_traceCounts.empty())
         {
@@ -1174,27 +1237,20 @@ void SDL_AppQuit(void* appstate, SDL_AppResult result)
             for (const auto& [name, count] : g_traceCounts)
                 top.emplace_back(count, name);
             std::sort(top.rbegin(), top.rend());
-            std::printf("[UIDemo] trace: %llu frames had changes; the elements changed most often (in how many of them):\n",
-                        static_cast<unsigned long long>(g_traceFrames));
+            line("trace: %llu frames had changes; the elements changed most often (in how many of them):", static_cast<unsigned long long>(g_traceFrames));
             for (size_t i = 0; i < std::min<size_t>(top.size(), 12); ++i)
-                std::printf("[UIDemo]   %6llu  %s\n", static_cast<unsigned long long>(top[i].first), top[i].second.c_str());
+                line("  %6llu  %s", static_cast<unsigned long long>(top[i].first), top[i].second.c_str());
         }
         if (g_traceFile)
             std::fclose(g_traceFile);
-        if (state->profilerState.frameCount > 0)
+        line("validation / NRI errors: %d%s", g_validationErrors, state->failed ? " (the run failed)" : "");
+        std::fputs(summary.c_str(), stdout);
+        if (FILE* file = std::fopen("UIDemo-summary.txt", "w"))
         {
-            const ProfilerState& ps = state->profilerState;
-            std::printf("[UIDemo] GPU: frame %.3f ms on average (%llu frames); per pass, in the frames it ran:\n", ps.frameTotalMs / ps.frameCount,
-                        static_cast<unsigned long long>(ps.frameCount));
-            for (const auto& [name, total] : ps.passTotals)
-                std::printf("[UIDemo]   %-22s %.3f ms  (%llu frames)\n", name.c_str(), total.first / total.second,
-                            static_cast<unsigned long long>(total.second));
+            std::fputs(summary.c_str(), file);
+            std::fclose(file);
+            std::printf("[UIDemo] summary written to %s\n", std::filesystem::absolute("UIDemo-summary.txt").string().c_str());
         }
-        using Reason = NoxUI::UIContext::DrawReason;
-        const auto count = [&](Reason r) { return static_cast<unsigned long long>(state->uiContext.GetDrawReasonCount(r)); };
-        std::printf("[UIDemo] UI frames drawn because of: input / changes %llu, state changed %llu, incomplete fingerprint %llu%s%s, "
-                    "draw list changed %llu\n", count(Reason::Changed), count(Reason::StateChanged), count(Reason::Incomplete),
-                    count(Reason::Incomplete) ? " -- class " : "", state->uiContext.GetIncompleteClassName(), count(Reason::DrawListChanged));
         const bool hadFailure = state->failed || result == SDL_APP_FAILURE || g_validationErrors > 0;
         delete state;
         if (hadFailure)

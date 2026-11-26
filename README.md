@@ -197,7 +197,9 @@ that redrew the UI and of frames that only composited it -- each averaged over t
 reused (elements measured, painted, copied). On exit UIDemo prints how many frames were idle, how many redrew the UI on the GPU (and how many of those only the dirty rects, over how much of the window), what
 drawn frames measured, painted and copied on average, the GPU time of a frame and of each render-graph pass (the UI redraw, the
 composite, the uploads -- what the rest of the frame took is the difference), and why frames were drawn (`UIContext::GetDrawReasonCount`: input, changed state,
-an incomplete fingerprint -- with the class -- or a changed draw list).
+an incomplete fingerprint -- with the class -- or a changed draw list). The summary (the command line, API, FPS, UI CPU on drawn and idle frames, GPU time of
+redraws and composites, partial redraws, verify results, GPU time per pass, why frames were drawn, the trace's top elements) is also
+written to `UIDemo-summary.txt` in the working directory -- one file to send.
 
 **The UI cache (UIDemo).** The UI is drawn into a texture of its own only when its draw list changed (`UIDrawList::GetRevision`, which an
 idle `UpdateAndRender` leaves as it was); other frames show that texture with one full-screen textured quad through the same pipeline.
