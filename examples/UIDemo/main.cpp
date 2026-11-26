@@ -133,6 +133,11 @@ namespace
 
         double lastGpuFrameMs = 0.0;
         std::vector<std::pair<std::string, double>> lastPassTimesMs;
+        // Every pass's GPU time summed over the run (name: total ms, frames it ran in), for the summary at exit: where a frame's GPU
+        // time goes (the UI redraw, the composite, the uploads, or none of them -- the rest of the frame).
+        std::map<std::string, std::pair<double, uint64_t>> passTotals;
+        double frameTotalMs = 0.0;
+        uint64_t frameCount = 0;
     };
 
     void profilerBeginFrame(uint32_t frameSlot, void* userData)
@@ -183,6 +188,17 @@ namespace
             uint64_t e = 0;
             if (p.queryId != NRI_GPU_PROFILER_INVALID_QUERY_ID && lookupTicks(p.queryId, s) && lookupTicks(p.queryId + 1, e))
                 ps->lastPassTimesMs.emplace_back(p.name, ticksToMs(s, e));
+        }
+        if (ps->lastGpuFrameMs > 0.0 && !ps->lastPassTimesMs.empty())
+        {
+            ps->frameTotalMs += ps->lastGpuFrameMs;
+            ++ps->frameCount;
+            for (const auto& [name, ms] : ps->lastPassTimesMs)
+            {
+                auto& total = ps->passTotals[name];
+                total.first += ms;
+                ++total.second;
+            }
         }
 
         completed.frameBeginQuery = NRI_GPU_PROFILER_INVALID_QUERY_ID;
@@ -1165,6 +1181,15 @@ void SDL_AppQuit(void* appstate, SDL_AppResult result)
         }
         if (g_traceFile)
             std::fclose(g_traceFile);
+        if (state->profilerState.frameCount > 0)
+        {
+            const ProfilerState& ps = state->profilerState;
+            std::printf("[UIDemo] GPU: frame %.3f ms on average (%llu frames); per pass, in the frames it ran:\n", ps.frameTotalMs / ps.frameCount,
+                        static_cast<unsigned long long>(ps.frameCount));
+            for (const auto& [name, total] : ps.passTotals)
+                std::printf("[UIDemo]   %-22s %.3f ms  (%llu frames)\n", name.c_str(), total.first / total.second,
+                            static_cast<unsigned long long>(total.second));
+        }
         using Reason = NoxUI::UIContext::DrawReason;
         const auto count = [&](Reason r) { return static_cast<unsigned long long>(state->uiContext.GetDrawReasonCount(r)); };
         std::printf("[UIDemo] UI frames drawn because of: input / changes %llu, state changed %llu, incomplete fingerprint %llu%s%s, "

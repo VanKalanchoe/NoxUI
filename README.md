@@ -195,7 +195,8 @@ build\Release\UIDemo.exe --vk --verify-ui-cache --fixed-clock :: compare every p
 The telemetry splits its readouts by kind of frame (an average over a mix jumps): UI CPU on drawn and on idle frames, GPU time of frames
 that redrew the UI and of frames that only composited it -- each averaged over the last quarter second -- and what the last drawn frame
 reused (elements measured, painted, copied). On exit UIDemo prints how many frames were idle, how many redrew the UI on the GPU (and how many of those only the dirty rects, over how much of the window), what
-drawn frames measured, painted and copied on average, and why frames were drawn (`UIContext::GetDrawReasonCount`: input, changed state,
+drawn frames measured, painted and copied on average, the GPU time of a frame and of each render-graph pass (the UI redraw, the
+composite, the uploads -- what the rest of the frame took is the difference), and why frames were drawn (`UIContext::GetDrawReasonCount`: input, changed state,
 an incomplete fingerprint -- with the class -- or a changed draw list).
 
 **The UI cache (UIDemo).** The UI is drawn into a texture of its own only when its draw list changed (`UIDrawList::GetRevision`, which an
