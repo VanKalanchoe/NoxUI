@@ -176,7 +176,9 @@ scripts\setup_build.bat -DNOXUI_BUILD_EXAMPLES=OFF -DNOXUI_BUILD_NOXRHI_BACKEND=
 Open **`build\NoxUI.slnx`** in **JetBrains Rider** (or Visual Studio 2026) and build/run **`UIDemo`**.
 
 ### 3. `UIDemo` CLI Flags
-`UIDemo` defaults to the no-GPU backend (`NRI_GRAPHICS_API_NONE`); pass `--vk` (Vulkan) or `--dx12` / `--d3d12` (Direct3D 12) to run on a hardware GPU backend. VSync is off by default (`--vsync` enables it):
+`UIDemo` defaults to the no-GPU backend (`NRI_GRAPHICS_API_NONE`); pass `--vk` (Vulkan) or `--dx12` / `--d3d12` (Direct3D 12) to run on a hardware GPU backend. VSync is off by default (`--vsync` enables it); without vsync Vulkan presents MAILBOX and D3D12 `Present(0, 0)` -- no tearing, and
+in a window D3D12 then waits for the desktop compositor (the monitor's rate) -- and `--tearing` shows frames as they finish (Vulkan
+IMMEDIATE, D3D12 `DXGI_PRESENT_ALLOW_TEARING`):
 ```bat
 build\Debug\UIDemo.exe --frames 10
 build\Debug\UIDemo.exe --vk --frames 10 --resize-test

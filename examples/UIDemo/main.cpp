@@ -267,6 +267,9 @@ namespace
         int height = 768;
         int maxFrames = -1;
         bool vsync = false;
+        // (--tearing, without vsync: frames shown as they finish, tearing allowed -- Vulkan IMMEDIATE, D3D12 DXGI_PRESENT_ALLOW_TEARING;
+        // without it Vulkan presents MAILBOX and D3D12 Present(0, 0), which in a window waits for the desktop compositor)
+        bool tearing = false;
         bool resizeTest = false;
         bool minimizeTest = false;
         bool enableViewports = true;
@@ -637,6 +640,8 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
             state->minimizeTest = true;
         else if (std::strcmp(argv[i], "--vsync") == 0)
             state->vsync = true;
+        else if (std::strcmp(argv[i], "--tearing") == 0)
+            state->tearing = true;
         else if (std::strcmp(argv[i], "--vk") == 0 || std::strcmp(argv[i], "--vulkan") == 0)
             state->api = NRI_GRAPHICS_API_VULKAN;
         else if (std::strcmp(argv[i], "--dx12") == 0 || std::strcmp(argv[i], "--d3d12") == 0)
@@ -705,9 +710,10 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
 
         state->device = nri::createDevice(devDesc);
         state->swapchain = nri::createSwapchain(state->device, {
-            static_cast<uint32_t>(state->width),
-            static_cast<uint32_t>(state->height),
-            state->vsync
+            .width = static_cast<uint32_t>(state->width),
+            .height = static_cast<uint32_t>(state->height),
+            .vsync = state->vsync,
+            .allowTearing = state->tearing
         });
 
         state->resourceHeap = state->device.createDescriptorHeap({
@@ -859,9 +865,10 @@ SDL_AppResult SDL_AppIterate(void* appstate)
             state->renderGraph.ReleaseResources();
             state->swapchain.reset();
             state->swapchain = nri::createSwapchain(state->device, {
-                static_cast<uint32_t>(state->width),
-                static_cast<uint32_t>(state->height),
-                state->vsync
+                .width = static_cast<uint32_t>(state->width),
+                .height = static_cast<uint32_t>(state->height),
+                .vsync = state->vsync,
+                .allowTearing = state->tearing
             });
             state->needsResize = false;
         }
@@ -1184,9 +1191,9 @@ void SDL_AppQuit(void* appstate, SDL_AppResult result)
         const char* api = state->api == NRI_GRAPHICS_API_VULKAN ? "Vulkan" : state->api == NRI_GRAPHICS_API_D3D12 ? "D3D12" : "None (no GPU)";
         line("==== summary ====");
         line("command line:%s", state->commandLine.c_str());
-        line("API %s, window %dx%d, %u frames in %.1f s (%.0f FPS, %.3f ms a frame)%s", api, state->width, state->height, state->frameNumber, seconds,
-             seconds > 0.0 ? state->frameNumber / seconds : 0.0, state->frameNumber ? 1000.0 * seconds / state->frameNumber : 0.0,
-             state->vsync ? ", vsync" : "");
+        line("API %s, window %dx%d, %u frames in %.1f s (%.0f FPS, %.3f ms a frame), present: %s", api, state->width, state->height, state->frameNumber,
+             seconds, seconds > 0.0 ? state->frameNumber / seconds : 0.0, state->frameNumber ? 1000.0 * seconds / state->frameNumber : 0.0,
+             state->vsync ? "vsync" : state->tearing ? "tearing allowed (--tearing)" : "no vsync, no tearing");
         line("UI CPU (UpdateAndRender): drawn %.3f ms (%llu frames), idle %.3f ms (%llu frames) | idle %.0f%% of frames", average(state->runUiDrawnMs, state->runUiDrawnCount),
              static_cast<unsigned long long>(state->runUiDrawnCount), average(state->runUiIdleMs, state->runUiIdleCount),
              static_cast<unsigned long long>(state->runUiIdleCount), 100.0 * static_cast<double>(state->uiContext.GetSkippedFrameCount()) / frames);
