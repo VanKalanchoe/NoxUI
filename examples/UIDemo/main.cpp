@@ -303,6 +303,10 @@ namespace
         double runUiDrawnMs = 0.0, runUiIdleMs = 0.0, runGpuRedrawMs = 0.0, runGpuCompositeMs = 0.0;
         uint64_t runUiDrawnCount = 0, runUiIdleCount = 0, runGpuRedrawCount = 0, runGpuCompositeCount = 0;
         std::string commandLine;
+        // (CPU time per part of a frame over the run, for the summary: waiting for a frame slot and the swapchain image, submitting,
+        // the floating viewports, presenting -- where a frame's time goes when the GPU is not the limit)
+        double cpuAcquireMs = 0.0, cpuSubmitMs = 0.0, cpuViewportsMs = 0.0, cpuPresentMs = 0.0;
+        uint64_t cpuTimedFrames = 0;
         std::chrono::steady_clock::time_point runStart = std::chrono::steady_clock::now();
         uint32_t uiDrawnCount = 0, uiIdleCount = 0, gpuRedrawCount = 0, gpuCompositeCount = 0;
         double shownUiDrawn = 0.0, shownUiIdle = 0.0, shownGpuRedraw = 0.0, shownGpuComposite = 0.0;
@@ -873,6 +877,9 @@ SDL_AppResult SDL_AppIterate(void* appstate)
             state->needsResize = false;
         }
 
+        using PhaseClock = std::chrono::steady_clock;
+        const auto msSince = [](PhaseClock::time_point t) { return std::chrono::duration<double, std::milli>(PhaseClock::now() - t).count(); };
+        const auto acquireStart = PhaseClock::now();
         state->device.beginFrame(state->frameNumber);
 
         const uint32_t frameSlot = state->frameNumber % kFramesInFlight;
@@ -882,6 +889,7 @@ SDL_AppResult SDL_AppIterate(void* appstate)
             state->needsResize = true;
             return SDL_APP_CONTINUE;
         }
+        const double acquireMs = msSince(acquireStart);
 
         const nri::Extent2D extent = state->swapchain.getExtent();
         if (extent.width == 0 || extent.height == 0)
@@ -1114,6 +1122,7 @@ SDL_AppResult SDL_AppIterate(void* appstate)
         }
         state->slotRedrewUi[frameSlot] = redrawUi;
         state->slotUsed[frameSlot] = true;
+        const auto submitStart = PhaseClock::now();
         for (size_t s = 0; s < submissions.size(); ++s)
         {
             const auto& sub = submissions[s];
@@ -1123,11 +1132,21 @@ SDL_AppResult SDL_AppIterate(void* appstate)
                 state->device.submit(sub.Queue, sub.CommandBuffers, sub.Waits, sub.Signals);
         }
 
+        const double submitMs = msSince(submitStart);
+
+        const auto viewportsStart = PhaseClock::now();
         if (state->viewportManager)
             state->viewportManager->UpdateAndRender(dtSec);
+        const double viewportsMs = msSince(viewportsStart);
 
+        const auto presentStart = PhaseClock::now();
         if (state->swapchain.present(frameSlot, imageIndex) == NRI_FRAME_RESULT_RESIZE_REQUIRED)
             state->needsResize = true;
+        state->cpuAcquireMs += acquireMs;
+        state->cpuSubmitMs += submitMs;
+        state->cpuViewportsMs += viewportsMs;
+        state->cpuPresentMs += msSince(presentStart);
+        ++state->cpuTimedFrames;
 
         ++state->frameNumber;
 
@@ -1194,6 +1213,10 @@ void SDL_AppQuit(void* appstate, SDL_AppResult result)
         line("API %s, window %dx%d, %u frames in %.1f s (%.0f FPS, %.3f ms a frame), present: %s", api, state->width, state->height, state->frameNumber,
              seconds, seconds > 0.0 ? state->frameNumber / seconds : 0.0, state->frameNumber ? 1000.0 * seconds / state->frameNumber : 0.0,
              state->vsync ? "vsync" : state->tearing ? "tearing allowed (--tearing)" : "no vsync, no tearing");
+        if (state->cpuTimedFrames > 0)
+            line("CPU per frame: waiting for a frame slot and the swapchain image %.3f ms, submit %.3f ms, floating viewports %.3f ms, present %.3f ms",
+                 average(state->cpuAcquireMs, state->cpuTimedFrames), average(state->cpuSubmitMs, state->cpuTimedFrames),
+                 average(state->cpuViewportsMs, state->cpuTimedFrames), average(state->cpuPresentMs, state->cpuTimedFrames));
         line("UI CPU (UpdateAndRender): drawn %.3f ms (%llu frames), idle %.3f ms (%llu frames) | idle %.0f%% of frames", average(state->runUiDrawnMs, state->runUiDrawnCount),
              static_cast<unsigned long long>(state->runUiDrawnCount), average(state->runUiIdleMs, state->runUiIdleCount),
              static_cast<unsigned long long>(state->runUiIdleCount), 100.0 * static_cast<double>(state->uiContext.GetSkippedFrameCount()) / frames);
