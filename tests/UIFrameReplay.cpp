@@ -53,11 +53,12 @@ namespace
         return h;
     }
 
+    // The gallery's tab panel: the one with its five tabs (the dock space's own panels hold one or two).
     UITabPanel* FindTabPanel(UIElement* element)
     {
         if (!element)
             return nullptr;
-        if (auto* tabs = dynamic_cast<UITabPanel*>(element))
+        if (auto* tabs = dynamic_cast<UITabPanel*>(element); tabs && tabs->GetTabContent(4))
             return tabs;
         for (const auto& child : element->GetChildren())
             if (UITabPanel* found = FindTabPanel(child.get()))
@@ -133,8 +134,16 @@ int main(int argc, char** argv)
     counter->OnSync = [counterPtr, &frameNumber]() { counterPtr->Text = "Frame " + std::to_string(frameNumber / 7); };
     telemetry->AddChild(counter);
     dock->AddPanel("Telemetry", telemetry, UIDockDropZone::Right, "NoxUI Component Gallery", 0.27f);
+#if defined(NOXUI_HAS_VERIFY_MODE)
     context.SetVerifyMode(verify);
     context.SetIncremental(incremental);
+#else
+    if (verify || !incremental)
+    {
+        std::fprintf(stderr, "[UIFrameReplay] this build has no idle frames to verify or turn off\n");
+        return 2;
+    }
+#endif
 
     std::vector<uint64_t> reference;
     if (!comparePath.empty())
@@ -162,7 +171,6 @@ int main(int argc, char** argv)
     bool buttonDown = false;
     int releaseIn = 0;
     int idleFor = 0;
-    const float dt = 1.0f / 60.0f;
     UIDrawList drawList;
     double totalMs = 0.0, worstMs = 0.0;
     size_t primitivesByType[8]{};
@@ -171,9 +179,13 @@ int main(int argc, char** argv)
     const UIKey keys[] = { UIKey::Left, UIKey::Right, UIKey::Up, UIKey::Down, UIKey::Tab, UIKey::Return, UIKey::Backspace, UIKey::Home,
                            UIKey::End, UIKey::Space, UIKey::Delete, UIKey::PageDown };
 
+    double clockSeconds = 0.0;
     for (frameNumber = 0; frameNumber < frames; ++frameNumber)
     {
-        g_TimeMs = static_cast<uint64_t>(frameNumber) * 1000ull / 60ull;
+        // A frame time that varies, as a real one does (half to one and a half of 1/60 s): settled animations must stay settled.
+        const float dt = (1.0f / 60.0f) * uniform(0.5f, 1.5f);
+        clockSeconds += dt;
+        g_TimeMs = static_cast<uint64_t>(clockSeconds * 1000.0);
 
         // --- input for this frame ---
         if (frameNumber % 400 == 0)
@@ -262,6 +274,7 @@ int main(int argc, char** argv)
     std::printf("[UIFrameReplay] %d frames (seed %u): UpdateAndRender avg %.3f ms, worst %.3f ms; primitives drawn: %zu rects, %zu glyphs, "
                 "%zu MSDF glyphs, %zu curves, %zu images\n", frames, seed, totalMs / std::max(1, frames - 30), worstMs, primitivesByType[0],
                 primitivesByType[4], primitivesByType[2], primitivesByType[3], primitivesByType[1]);
+#if defined(NOXUI_HAS_VERIFY_MODE)
     std::printf("[UIFrameReplay] idle frames skipped: %llu of %d", static_cast<unsigned long long>(context.GetSkippedFrameCount()), frames);
     if (verify)
         std::printf("; verify: %llu idle frames drawn and compared, %llu differed", static_cast<unsigned long long>(context.GetVerifiedFrameCount()),
@@ -269,6 +282,7 @@ int main(int argc, char** argv)
     std::printf("\n");
     if (verify && context.GetVerifyFailureCount() > 0)
         return 1;
+#endif
     if (!reference.empty())
     {
         if (static_cast<int>(reference.size()) != frames)

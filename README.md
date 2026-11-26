@@ -92,9 +92,12 @@ const NoxUI_NoxRHIDrawData drawData = NoxUI_ImplNoxRHI_PrepareDrawData(drawList,
   fingerprint -- `GetIncompleteClassName` -- or a changed draw list); `SetTraceStateChanges(true)` logs, per frame, the elements whose own
   fingerprint changed. The tooltip timer is not part of the fingerprint, only whether the tooltip shows this frame: a pointer resting on
   an element no longer keeps frames drawn for the 0.45 s delay (a skipped frame advances the timer as a drawn one does).
+- **Transitions arrive.** A style transition snaps to its target once every field is within 0.001 (a quarter of an 8-bit colour step,
+  a thousandth of a pixel), as the toggle, drawer and scroll-bar fades do: an exponential approach never lands exactly, and a settled
+  element must stay settled whatever the frame time.
 - **Verified.** `UIFrameReplay` (tests/) replays the gallery headless with seeded input -- tab switches, clicks, drags, wheel, keys,
-  typing, idle stretches, resizes, toasts -- and hashes each frame's draw list: `--record` / `--compare` check one build against
-  another frame by frame; `--verify` draws every frame that would be skipped and compares it with what was kept. Eight seeds
+  typing, idle stretches, resizes, toasts, a frame time that varies -- and hashes each frame's draw list: `--record` / `--compare` check
+  one build against another frame by frame (`--no-incremental` records the same build with nothing skipped); `--verify` draws every frame that would be skipped and compares it with what was kept. Eight seeds
   (24,000 frames) are identical to the build without these changes; CI runs `--verify` on three.
 - **Layout** remembers `HeightForWidth` answers during a layout pass (nested stacks asked each child twice per level: the Editor
   Widgets tab's arrange went from 142 to 51 us), and **text drawing** reads kerning from a per-font table.

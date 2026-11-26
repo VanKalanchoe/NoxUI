@@ -552,6 +552,8 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
                 g_traceFile = std::fopen(argv[++i], "w");
                 if (!g_traceFile)
                     std::fprintf(stderr, "[UIDemo] cannot write %s; the trace goes to the console\n", argv[i]);
+                else
+                    std::printf("[UIDemo] UI trace: %s\n", std::filesystem::absolute(argv[i]).string().c_str());
             }
         }
         else if (std::strcmp(argv[i], "--no-ui-cache") == 0)

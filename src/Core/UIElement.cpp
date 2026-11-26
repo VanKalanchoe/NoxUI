@@ -292,6 +292,12 @@ namespace NoxUI
         {
             const float alpha = 1.0f - std::exp(-dt / std::max(target.TransitionSeconds, 0.001f));
             m_CurrentStyle = UIStyleBox::Lerp(m_CurrentStyle, target, alpha);
+            // Arrived: within a thousandth (a quarter of an 8-bit colour step, a thousandth of a pixel) the style is the target. An
+            // exponential approach never lands on it exactly, and with a frame time that varies its last bits moved for ever -- the
+            // element changed every frame, and no frame could be idle (the user's tab buttons). The toggle, drawer and scroll bar
+            // fades snap the same way.
+            if (UIStyleBox::Near(m_CurrentStyle, target, 1e-3f))
+                m_CurrentStyle = target;
         }
         m_StyleSettled = UIStyleBox::Equal(m_CurrentStyle, target);
 

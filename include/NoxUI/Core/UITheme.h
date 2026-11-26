@@ -32,6 +32,20 @@ namespace NoxUI
         float TransitionSeconds = 0.10f;
 
         static UIStyleBox Lerp(const UIStyleBox& a, const UIStyleBox& b, float t);
+        // Every float within `epsilon` of the other's, the rest the same: a transition this close has arrived (UIElement snaps it).
+        static bool Near(const UIStyleBox& a, const UIStyleBox& b, float epsilon)
+        {
+            const auto close = [epsilon](float x, float y) { return x == y || (x - y <= epsilon && y - x <= epsilon); };
+            const auto close4 = [&close](const glm::vec4& x, const glm::vec4& y) { return close(x.x, y.x) && close(x.y, y.y) && close(x.z, y.z) && close(x.w, y.w); };
+            return close4(a.FillColor, b.FillColor) && close4(a.FillColorBottom, b.FillColorBottom) && a.UseGradient == b.UseGradient &&
+                   close4(a.BorderColor, b.BorderColor) && close(a.BorderThickness, b.BorderThickness) && close4(a.ShadowColor, b.ShadowColor) &&
+                   close(a.ShadowOffset.x, b.ShadowOffset.x) && close(a.ShadowOffset.y, b.ShadowOffset.y) && close(a.ShadowBlur, b.ShadowBlur) &&
+                   close(a.CornerRadius.TopLeft, b.CornerRadius.TopLeft) && close(a.CornerRadius.TopRight, b.CornerRadius.TopRight) &&
+                   close(a.CornerRadius.BottomRight, b.CornerRadius.BottomRight) && close(a.CornerRadius.BottomLeft, b.CornerRadius.BottomLeft) &&
+                   close(a.Padding.Left, b.Padding.Left) && close(a.Padding.Top, b.Padding.Top) && close(a.Padding.Right, b.Padding.Right) &&
+                   close(a.Padding.Bottom, b.Padding.Bottom) && close4(a.TextColor, b.TextColor) && close(a.FontSize, b.FontSize) &&
+                   a.TransitionSeconds == b.TransitionSeconds;
+        }
         // Every field the same value (floats compared as values).
         static bool Equal(const UIStyleBox& a, const UIStyleBox& b)
         {
