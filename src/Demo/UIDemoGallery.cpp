@@ -171,9 +171,10 @@ namespace NoxUI
             pickersRow->WidthMode = UISizeMode::Fill;
             auto dropdown = MakeUI<UIDropdown>(&context, std::vector<std::string>{ "Perspective", "Orthographic", "Top", "Front" }, 0);
             dropdown->WidthMode = UISizeMode::Fill;
-            dropdown->OnSelectionChanged = [dropdown, reportStatus](int)
+            // (the element by raw pointer: a Ref in its own callback would keep it alive for ever)
+            dropdown->OnSelectionChanged = [d = dropdown.get(), reportStatus](int)
             {
-                reportStatus("Camera: " + dropdown->GetSelectedText());
+                reportStatus("Camera: " + d->GetSelectedText());
             };
             auto segmented = MakeUI<UISegmentedControl>(
                 std::vector<std::string>{ "Local", "World" },

@@ -15,6 +15,7 @@
 
 namespace NoxUI
 {
+    class UIContext;
     class UIDrawList;
     struct UIPaintMemo;
 
@@ -50,6 +51,7 @@ namespace NoxUI
         // The height this element needs at `width` (text wraps, a grid adds rows): override ComputeHeightForWidth, call HeightForWidth.
         // HeightForWidth remembers its answers during a layout pass (UIContext marks it): containers ask each child several times
         // (measuring a slot, then arranging it, then the child asks its own children), which nested stacks multiplied per level.
+        // With the layout cache (UIContext::SetLayoutCache) it keeps them across frames while nothing inside the element changed.
         virtual float ComputeHeightForWidth(float /*width*/) { return m_DesiredSize.y; }
         float HeightForWidth(float width);
         void Arrange(const UIRect& allottedRect);
@@ -66,12 +68,18 @@ namespace NoxUI
 
         // Fingerprint (UIStateHash.h): HashState adds everything this element's own layout and paint read -- its fields, its
         // interaction state (hover, drag, caret, scroll), its animation state, values read through callbacks -- and not its children
-        // (HashTree adds those). A class that overrides it also overrides StateHashClass to return its own typeid: an element whose
-        // class does not (a subclass with fields of its own) keeps every frame drawn in full, nothing is skipped for it.
+        // (the context keys each element after the style pass with it, and combines the keys of the ones inside). A class that
+        // overrides it also overrides StateHashClass to return its own typeid: an element whose class does not (a subclass with fields
+        // of its own) is never skipped, reused or copied, and keeps the frames it is in drawn in full.
         virtual void HashState(UIStateHasher& h) const;
         virtual const std::type_info& StateHashClass() const { return typeid(UIElement); }
-        // This element and, when visible, everything inside it.
+        // This element and, when visible, everything inside it, in one hasher (tests and tools; the context keys elements one by one).
         void HashTree(UIStateHasher& h) const;
+        // For the layout and paint caches (UIContext::SetLayoutCache / SetPaintCache), which key each element on its own: state
+        // this element's layout or paint reads from outside itself and the elements inside it -- an owner it paints from (a dock
+        // space's splitters), a model a callback reads. The parent's own state and bounds are always part of the key, and so is
+        // the pointer (position, buttons, modifiers) for the element under it, the captured one and the focused one.
+        virtual void HashPaintDependencies(UIStateHasher& /*h*/) const {}
 
         // Hit-testing (reverse paint order)
         virtual UIElement* HitTest(const UIVec2& pos);
@@ -170,6 +178,113 @@ namespace NoxUI
         void HashPaintOutput(UIStateHasher& h, UIPaintMemo& memo) const;
 
     private:
+        friend class UIContext;
+
+        // ---- Layout and paint caches (UIContext::SetLayoutCache / SetPaintCache) ----
+        // Every element is keyed on its own: its own fingerprint (HashState, HashPaintDependencies) and the keys of what is inside it.
+        // Layout: the style pass keys each visible element after its children (UpdateStylesRecursive) -- the state layout reads.
+        // Measure and Arrange then reuse what they found last time while the key, the bounds inside, the rect and the parent's own
+        // state are what they were. Paint: keyed again after layout and hover (KeyPaintTree), with the bounds; an element whose key and
+        // clip are last frame's is copied from last frame's list (PaintCached), the elements inside it with it.
+        struct PaintPass
+        {
+            UIDrawList* Out = nullptr;
+            const UIDrawList* Old = nullptr; // (last frame's list; its records carry Generation)
+            const UITheme* Theme = nullptr;
+            uint64_t Generation = 0;
+            bool Replay = true;
+            uint32_t Painted = 0, Replayed = 0;
+        };
+        struct KeyContext
+        {
+            const UIElement* Hovered = nullptr;
+            const UIElement* Captured = nullptr;
+            const UIElement* Focused = nullptr;
+            uint64_t PointerHash = 0;
+        };
+        static constexpr uint32_t kParentOuterClip = 0xFFFFFFFFu;
+        // The fingerprint of this element's own state with the frame's epoch (theme, fonts, glyph atlas, viewport); false: its class
+        // does not fingerprint everything it has.
+        bool HashOwnKey(UIStateHasher& h) const;
+        // The keys of this element and the visible ones inside (UIContext, after the style pass).
+        void KeyTree();
+        // Verify mode: every visible element's own state is still what the style pass keyed (an idle frame changed nothing).
+        bool OwnKeysHold() const;
+        UIStyleBox ResolveTarget(const UITheme& theme);
+        // This element's own state is still what the style pass keyed (a parent may change a child's properties while it lays it out).
+        bool OwnLayoutKeyHolds();
+        // The key Measure and HeightForWidth reuse their answers under (0: nothing to reuse this pass).
+        uint64_t MeasureKey();
+        // The parent's own state and bounds for the layout keys (0: not keyed this pass, nothing to reuse).
+        uint64_t ParentLayoutKey() const;
+        // The veil of a disabled container and OnPaintOverlay: what PaintRecursive paints after the children.
+        void PaintAfterChildren(UIDrawList& drawList, const UITheme& theme);
+        void UpdateLayoutHash();
+        // This element and the ones above it measure and arrange again: one inside them was measured or arranged outside their own
+        // measure (arrange) -- a popup sized from an event -- so the sizes and bounds they remember may not hold.
+        void ForgetLayoutUpward();
+        void InvalidateCaches();
+        uint64_t KeyPaintTree(const UIElement* parent, const KeyContext& context);
+        void PaintCached(PaintPass& pass, uint32_t parentPrim, uint32_t parentClip, uint32_t parentOuter, bool parentOldValid, uint32_t parentOldPrim,
+                         uint32_t parentOldClip, uint32_t parentOldOuter);
+        // Set by UIContext for its frame (one context lays out and paints at a time).
+        inline static uint64_t s_CacheEpoch = 0;
+        inline static uint64_t s_KeyPass = 0;
+        inline static bool s_LayoutCache = false;
+        inline static const std::type_info* s_FirstIncomplete = nullptr;
+        inline static std::vector<std::pair<const void*, uint64_t>>* s_Trace = nullptr;
+        // Counts UpdateAndRender calls (after the OnSync hooks): HashPaintOutput paints an element once a frame.
+        inline static uint64_t s_FrameSerial = 0;
+        // Counted for UIContext's statistics: the elements a frame measured and arranged (not reused).
+        inline static uint32_t s_MeasuredCount = 0;
+        inline static uint32_t s_ArrangedCount = 0;
+
+        // Keys (style pass): own, and with the ones inside.
+        uint64_t m_KeyPass = 0;
+        uint64_t m_OwnKey = 0;
+        uint64_t m_TreeKey = 0;
+        bool m_OwnComplete = false;
+        bool m_TreeKeyed = false;
+        bool m_OwnKeyStale = false;
+        // The style the current one settled on was resolved for these (UpdateStylesRecursive resolves only when one changes).
+        const UITheme* m_ResolvedTheme = nullptr;
+        uint64_t m_ResolvedThemeVersion = 0;
+        UIState m_ResolvedState = UIState::Normal;
+        std::string m_ResolvedClass, m_ResolvedVariant;
+        // The bounds of this element and the visible ones inside it after its last Arrange.
+        uint64_t m_LayoutHash = 0;
+        // Measure
+        uint64_t m_MeasureKeyPass = 0;
+        uint64_t m_MeasureKeyThisPass = 0;
+        uint64_t m_MeasureKey = 0;
+        bool m_MeasureValid = false;
+        uint64_t m_MeasureSerial = 0; // (counts the measures that found a size: the sizes inside changed when it did)
+        // Arrange
+        UIRect m_ArrangeRect{};
+        uint64_t m_ArrangeTreeKey = 0;
+        uint64_t m_ArrangeMeasureSerial = 0;
+        uint64_t m_ArrangeParentKey = 0;
+        uint64_t m_ArrangeLayoutHash = 0;
+        bool m_ArrangeValid = false;
+        bool m_InMeasure = false;
+        bool m_InArrange = false;
+        // Paint keys (after layout) and what this element and the ones inside it added to last frame's list, relative to its parent's
+        // first primitive and clip rect then.
+        uint64_t m_PaintStateKey = 0; // (own state, bounds and clip: what the children's keys take of their parent)
+        uint64_t m_PaintOwnKey = 0;
+        uint64_t m_PaintTreeKey = 0;
+        bool m_PaintKeyed = false;
+        struct PaintRecord
+        {
+            uint64_t Key = 0;
+            uint64_t Generation = 0;
+            glm::vec4 OuterRect{ 0.0f }, OuterRadii{ 0.0f }; // (the clip it was painted under: clips it pushed were cut by it)
+            uint32_t PrimOffset = 0, PrimCount = 0, ClipOffset = 0, ClipCount = 0;
+            uint32_t OuterRel = 0; // (kParentOuterClip: the clip the parent paints under; else a clip the parent pushed, from its first)
+            bool Keyed = false;
+            bool Valid = false;
+        } m_PaintRecord;
+
         uint64_t m_Id = 0;
         UIElement* m_Parent = nullptr;
         std::vector<Ref<UIElement>> m_Children;
@@ -184,10 +299,13 @@ namespace NoxUI
         // fingerprint then needs only those (theme version, class, variant, state), not the box.
         bool m_StyleSettled = false;
 
-        // HeightForWidth's answers in the current layout pass (two widths: a row asks its label and value at theirs, a stack at its own).
+        // HeightForWidth's answers in the current layout pass (two widths: a row asks its label and value at theirs, a stack at its own)
+        // -- with the layout cache, kept while MeasureKey stays (and the desired size they were found with).
         uint64_t m_HeightForWidthPass = 0;
+        uint64_t m_HeightForWidthCacheKey = 0;
         float m_HeightForWidthKey[2]{};
         float m_HeightForWidthValue[2]{};
+        UIVec2 m_HeightForWidthDesired[2]{};
         uint8_t m_HeightForWidthCount = 0;
         uint8_t m_HeightForWidthNext = 0;
         inline static uint64_t s_LayoutPass = 0;

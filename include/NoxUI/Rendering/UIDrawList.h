@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -57,6 +58,10 @@ namespace NoxUI
         std::vector<UIPrimitive> Primitives;
         std::vector<UIClipRect> ClipRects;
         uint64_t Version = 0;
+        // Painted once a frame per bounds: a frame fingerprints an element several times (the idle check, the layout and paint
+        // keys), and what the callbacks give does not change within one.
+        uint64_t Frame = 0;
+        UIRect Bounds{};
     };
 
     class UIDrawList
@@ -104,6 +109,42 @@ namespace NoxUI
         // A list painted only to fingerprint what would be drawn (UIElement::HashPaintOutput): text records its glyphs (codepoint,
         // pen, size, colour) without asking the glyph cache, which must not rasterize or place glyphs for a list nobody draws.
         void SetFingerprintOnly(bool enabled) { m_FingerprintOnly = enabled; }
+
+        // Incremental paint (UIContext::SetPaintCache): an element whose output is the same as last frame's is copied from the last
+        // frame's list instead of painted again. Its primitives were clipped either by the clip it was painted under (`oldOuter`) or by
+        // clips it pushed itself, which follow `oldClipFirst` in the old list: those clip rects are appended too, and every primitive
+        // takes the matching index here (the current clip, or the copied rect).
+        uint32_t GetCurrentClipIndex() const { return CurrentClipIndex(); }
+        size_t GetClipStackDepth() const { return m_ClipStack.size(); }
+        void AppendFrom(const UIDrawList& old, uint32_t oldPrimFirst, uint32_t primCount, uint32_t oldClipFirst, uint32_t clipCount, uint32_t oldOuter)
+        {
+            if (primCount == 0 && clipCount == 0)
+                return;
+            Touch();
+            const uint32_t outer = CurrentClipIndex();
+            const uint32_t clipFirst = static_cast<uint32_t>(m_ClipRects.size());
+            m_ClipRects.insert(m_ClipRects.end(), old.m_ClipRects.begin() + oldClipFirst, old.m_ClipRects.begin() + oldClipFirst + clipCount);
+            const size_t first = m_Primitives.size();
+            m_Primitives.insert(m_Primitives.end(), old.m_Primitives.begin() + oldPrimFirst, old.m_Primitives.begin() + oldPrimFirst + primCount);
+            if (outer == oldOuter && clipFirst == oldClipFirst) // (nothing moved: the indices hold as they are)
+                return;
+            for (size_t i = first; i < m_Primitives.size(); ++i)
+            {
+                uint32_t& index = m_Primitives[i].clipIndex;
+                index = index == oldOuter ? outer : index - oldClipFirst + clipFirst;
+            }
+        }
+        // Exchanges the contents (primitives, clip rects) with `other`: UIContext keeps the last frame's list for AppendFrom without
+        // copying it.
+        void SwapContents(UIDrawList& other)
+        {
+            m_Primitives.swap(other.m_Primitives);
+            m_ClipRects.swap(other.m_ClipRects);
+            m_ClipStack.swap(other.m_ClipStack);
+            std::swap(m_ViewportSize, other.m_ViewportSize);
+            Touch();
+            other.Touch();
+        }
 
     private:
         void Touch() { m_Revision = ++s_RevisionCounter; }

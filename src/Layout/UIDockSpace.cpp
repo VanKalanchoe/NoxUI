@@ -53,6 +53,38 @@ namespace NoxUI
             const UIDockSpace& m_Owner;
         };
 
+        // The docked tab panels' parent: lays them out in their nodes' rects (the dock space's split tree, ArrangePanels) -- once,
+        // not first in the whole area and then again in their nodes (the layout cache keeps an arrange for the rect it was given;
+        // two rects a frame would arrange everything inside every frame).
+        class UIDockHostElement final : public UIElement
+        {
+        public:
+            void HashState(UIStateHasher& h) const override
+            {
+                UIElement::HashState(h); // (laid out from the dock space's state: its parent, whose own state the layout keys take)
+            }
+            const std::type_info& StateHashClass() const override { return typeid(UIDockHostElement); }
+
+            std::function<void(const UIRect&)> ArrangePanels;
+
+        protected:
+            void ArrangeChildren(const UIRect& contentRect) override
+            {
+                if (ArrangePanels)
+                    ArrangePanels(contentRect);
+            }
+        };
+
+        void CollectDockedPanels(const UIDockNode* node, std::vector<const UIElement*>& out)
+        {
+            if (!node)
+                return;
+            if (node->TabPanel)
+                out.push_back(node->TabPanel.get());
+            CollectDockedPanels(node->First.get(), out);
+            CollectDockedPanels(node->Second.get(), out);
+        }
+
         class UIDockOverlayElement final : public UIElement
         {
         public:
@@ -93,7 +125,21 @@ namespace NoxUI
         ClipChildren = true;
         DrawBackground = false;
 
-        m_DockHost = Ref<UIElement>(new UIElement());
+        Ref<UIDockHostElement> dockHost(new UIDockHostElement());
+        dockHost->ArrangePanels = [this](const UIRect& rect)
+        {
+            // (a panel in no node -- none normally -- takes the whole area, as before; the docked ones their nodes' rects)
+            std::vector<const UIElement*> docked;
+            CollectDockedPanels(m_RootNode.get(), docked);
+            for (const auto& child : m_DockHost->GetChildren())
+            {
+                if (child->Visible && std::find(docked.begin(), docked.end(), child.get()) == docked.end())
+                    child->Arrange(rect);
+            }
+            if (m_RootNode)
+                ArrangeNode(m_RootNode, rect);
+        };
+        m_DockHost = dockHost;
         m_DockHost->HitTestMode = UIHitTestMode::PassThrough;
         AddChild(m_DockHost);
 
@@ -1006,8 +1052,8 @@ namespace NoxUI
     void UIDockSpace::ArrangeChildren(const UIRect& contentRect)
     {
         if (m_DockHost)
-            m_DockHost->Arrange(contentRect);
-        if (m_RootNode)
+            m_DockHost->Arrange(contentRect); // (the docked panels in their nodes: UIDockHostElement)
+        else if (m_RootNode)
             ArrangeNode(m_RootNode, contentRect);
         if (m_SplitterHost)
             m_SplitterHost->Arrange(contentRect);

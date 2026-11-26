@@ -267,6 +267,8 @@ namespace
         // UpdateAndRender leaves as it was): other frames show the texture with one full-screen quad. --no-ui-cache: drawn every frame.
         bool uiCacheEnabled = true;
         bool traceUiChanges = false; // (--trace-ui-changes [file]: log what keeps the UI from being idle)
+        bool partialFrames = true;   // (--no-partial: drawn frames lay out and paint everything, no layout / paint cache)
+        uint64_t partialMeasured = 0, partialPainted = 0, partialCopied = 0; // (summed over drawn frames, for the summary at exit)
         // Telemetry over the last quarter second, split by kind of frame (an average over a mix of idle and drawn frames jumps):
         // UI CPU on drawn and on idle frames, GPU time of frames that redrew the UI and of frames that only composited it.
         double uiDrawnSum = 0.0, uiIdleSum = 0.0, gpuRedrawSum = 0.0, gpuCompositeSum = 0.0;
@@ -369,6 +371,8 @@ static void initNoxUI(AppState& state)
         state.uiTheme->LoadFromFile(themePath);
     state.uiContext.SetTheme(state.uiTheme);
     state.uiContext.SetTraceStateChanges(state.traceUiChanges);
+    state.uiContext.SetLayoutCache(state.partialFrames);
+    state.uiContext.SetPaintCache(state.partialFrames);
 
     state.dockSpace = NoxUI::MakeUI<NoxUI::UIDockSpace>();
     state.dockSpace->SetContext(&state.uiContext);
@@ -558,6 +562,8 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
         }
         else if (std::strcmp(argv[i], "--no-ui-cache") == 0)
             state->uiCacheEnabled = false;
+        else if (std::strcmp(argv[i], "--no-partial") == 0)
+            state->partialFrames = false;
         else if (std::strcmp(argv[i], "--no-viewports") == 0)
             state->enableViewports = false;
     }
@@ -820,14 +826,20 @@ SDL_AppResult SDL_AppIterate(void* appstate)
         {
             state->uiDrawnSum += state->lastUiMs;
             ++state->uiDrawnCount;
+            state->partialMeasured += state->uiContext.GetLastMeasuredCount();
+            state->partialPainted += state->uiContext.GetLastPaintedCount();
+            state->partialCopied += state->uiContext.GetLastReplayedCount();
         }
 
-        if (state->telemetryPrimsLabel)
+        if (state->telemetryPrimsLabel && telemetryDue) // (four times a second, as the other telemetry: text that changes is a drawn frame)
         {
-            char buf[96]{};
-            std::snprintf(buf, sizeof(buf), "UI Primitives: %zu  |  Clips: %zu",
-                          state->uiDrawList.GetPrimitives().size(),
-                          state->uiDrawList.GetClipRects().size());
+            char buf[160]{};
+            // (the last drawn frame: elements measured and painted again, and elements copied from the frame before with what is
+            // inside them -- UIContext::SetLayoutCache / SetPaintCache; --no-partial: everything every drawn frame)
+            std::snprintf(buf, sizeof(buf), "UI Primitives: %zu  |  Clips: %zu  |  drawn frame: %u measured, %u painted, %u copied",
+                          state->uiDrawList.GetPrimitives().size(), state->uiDrawList.GetClipRects().size(),
+                          state->uiContext.GetLastMeasuredCount(), state->uiContext.GetLastPaintedCount(),
+                          state->uiContext.GetLastReplayedCount());
             state->telemetryPrimsLabel->Text = buf;
         }
 
@@ -1013,6 +1025,15 @@ void SDL_AppQuit(void* appstate, SDL_AppResult result)
         std::printf("[UIDemo] %u frames: UI idle (layout and paint skipped) in %llu, UI redrawn on the GPU in %llu%s\n", state->frameNumber,
                     static_cast<unsigned long long>(state->uiContext.GetSkippedFrameCount()),
                     static_cast<unsigned long long>(state->uiCacheRedraws), state->uiCacheEnabled ? "" : " (UI cache off)");
+        {
+            const uint64_t drawn = state->frameNumber - std::min<uint64_t>(state->frameNumber, state->uiContext.GetSkippedFrameCount());
+            if (drawn > 0 && state->partialFrames)
+                std::printf("[UIDemo] drawn frames: %.1f elements measured, %.1f painted, %.1f copied from the frame before (on average)\n",
+                            static_cast<double>(state->partialMeasured) / drawn, static_cast<double>(state->partialPainted) / drawn,
+                            static_cast<double>(state->partialCopied) / drawn);
+            else if (!state->partialFrames)
+                std::printf("[UIDemo] partial frames off (--no-partial): drawn frames laid out and painted everything\n");
+        }
         if (!g_traceCounts.empty())
         {
             std::vector<std::pair<uint64_t, std::string>> top;

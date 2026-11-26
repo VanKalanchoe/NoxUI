@@ -76,13 +76,25 @@ const NoxUI_NoxRHIDrawData drawData = NoxUI_ImplNoxRHI_PrepareDrawData(drawList,
   checked against the old algorithm over 3.3 million texts / widths / sizes); a **wrapped label keeps its last wrap** while its text,
   width, font size and font stay the same (layout asks for a wrapped label's height several times a frame). The "Editor Widgets" demo tab
   went from 3.4 ms to 0.15 ms of `UpdateAndRender` per frame (Release; 44 ms to 1.1 ms in Debug); the other tabs take 0.02-0.04 ms.
-- **Idle frames are skipped (retained mode).** After the `OnSync` hooks, `UIContext::UpdateAndRender` fingerprints the UI: every visible
-  element's `HashState` (its fields, interaction state, animation state, values read through callbacks) plus the context's own state
-  (hover, focus, toasts, theme version, glyph cache, viewport). When no input came since the last frame, the fingerprint equals the one
-  the last frame began from, and the draw list is still the one it drew (`UIDrawList::GetRevision`), the frame would draw the same:
-  styles, layout and paint are skipped and the list keeps what it holds (`WasLastFrameSkipped()` -- a backend can skip its upload).
-  A skipped frame costs the syncs plus the fingerprint: 4-10 us on the gallery's static tabs, against 25-60 us drawn. Animated content
-  (a spinner, a blinking caret, a transition, a toast) keeps frames drawn while it moves.
+- **Idle frames are skipped (retained mode).** Each frame `UIContext::UpdateAndRender` runs the `OnSync` hooks, updates the hover against
+  what is on screen (the last layout, as pointer events do), runs the style pass (`OnUpdate`: animations, transitions) and keys every
+  visible element: its `HashState` (its fields, interaction state, animation state, values read through callbacks) and the keys of the
+  elements inside it. With the context's own state (focus, pointer, toasts, theme version, glyph cache, viewport) that is the UI's
+  fingerprint. When no input came since the last frame, the fingerprint equals the last frame's, and the draw list is still the one it
+  drew (`UIDrawList::GetRevision`), layout and paint would draw the same: they are skipped and the list keeps what it holds
+  (`WasLastFrameSkipped()` -- a backend can skip its upload). A skipped frame costs 7-15 us on the gallery's static tabs (in this container).
+- **Drawn frames do only what changed (partial layout and paint).** The same keys drive two caches (`SetLayoutCache`, `SetPaintCache`,
+  on by default). *Layout:* an element whose own state, the state of everything inside it, the bounds inside it and its parent's state
+  are what they were when it was last measured keeps its size without measuring again (`HeightForWidth` keeps its answers the same way);
+  arranged again in the same rect, it keeps every bound inside it. *Paint:* after layout each element's key takes its bounds, its clip,
+  its parent's state and, for the element under the pointer (captured, focused), the pointer; an element whose key and clip are last
+  frame's is copied from last frame's draw list (kept by the context, swapped, not copied) with everything inside it -- its primitives and
+  the clip rects it pushed, their indices moved to where they land. On the Editor Widgets tab, where two level meters and the channel
+  curves animate every frame, a drawn frame measures and paints ~14 of its 178 elements and copies the rest: 0.095 ms instead of 0.19 ms
+  laid out and painted in full (0.22-0.27 ms at the previous commit, whose fingerprint was a pass of its own). Nothing is copied while a
+  drag and drop is in flight (elements paint from the pointer and the payload). The rules a widget follows: layout changes nothing paint
+  reads but the bounds (a parent may set a child's `FixedSize` / `Visible` while laying it out -- the child's own state is checked again);
+  state read from outside the element and its children goes in `HashPaintDependencies` (the parent's own state is always in the key).
 - **Custom widgets.** A class that adds state overrides `HashState` (call the base first, add every field its layout and paint read)
   and `StateHashClass` (its own `typeid`) -- the `NOXUI_STATE_HASH(Class)` macro declares both. An element whose class does not
   (a subclass with fields of its own) never lets a frame be skipped: nothing breaks, it just keeps the old cost. A widget that paints
@@ -97,8 +109,13 @@ const NoxUI_NoxRHIDrawData drawData = NoxUI_ImplNoxRHI_PrepareDrawData(drawList,
   element must stay settled whatever the frame time.
 - **Verified.** `UIFrameReplay` (tests/) replays the gallery headless with seeded input -- tab switches, clicks, drags, wheel, keys,
   typing, idle stretches, resizes, toasts, a frame time that varies -- and hashes each frame's draw list: `--record` / `--compare` check
-  one build against another frame by frame (`--no-incremental` records the same build with nothing skipped); `--verify` draws every frame that would be skipped and compares it with what was kept. Eight seeds
-  (24,000 frames) are identical to the build without these changes; CI runs `--verify` on three.
+  one build against another frame by frame (`--no-incremental` records the same build with nothing skipped, reused or copied);
+  `--verify` draws every frame that would be skipped, and every drawn frame that copied elements, in full and compares it with what was
+  kept. Eight seeds (24,000 frames) give exactly the frames of the same build without idle frames and caches, in Release and in a Debug
+  build with AddressSanitizer and UndefinedBehaviorSanitizer; CI runs `--verify` and the `--no-incremental` comparison on three.
+  One behaviour changed on purpose: the hover follows the last frame's layout (what is on screen) at the start of the frame, not the new
+  layout after it -- when the layout moves under a pointer that stands still, the hover follows one frame later, and hover styles apply in
+  the frame the hover changes.
 - **Layout** remembers `HeightForWidth` answers during a layout pass (nested stacks asked each child twice per level: the Editor
   Widgets tab's arrange went from 142 to 51 us), and **text drawing** reads kerning from a per-font table.
 - **UIDemo's telemetry** shows the frame time (one frame to the next: waiting for the GPU and the swapchain included) and, separately,
@@ -161,10 +178,13 @@ build\Release\UIDemo.exe --vk --tab 1                      :: open the gallery o
 build\Release\UIDemo.exe --vk --trace-ui-changes trace.txt  :: log the elements that keep the UI from being idle (to the file;
                                                             :: without a file, to the console); a summary at exit
 build\Release\UIDemo.exe --vk --no-ui-cache                 :: draw the UI on the GPU every frame (no cached texture)
+build\Release\UIDemo.exe --vk --no-partial                  :: drawn frames lay out and paint everything (no layout / paint cache)
 ```
 The telemetry splits its readouts by kind of frame (an average over a mix jumps): UI CPU on drawn and on idle frames, GPU time of frames
-that redrew the UI and of frames that only composited it -- each averaged over the last quarter second. On exit UIDemo prints how many frames were idle, how many redrew the UI on the GPU, and why the others were drawn
-(`UIContext::GetDrawReasonCount`: input, changed state, an incomplete fingerprint -- with the class -- or a changed draw list).
+that redrew the UI and of frames that only composited it -- each averaged over the last quarter second -- and what the last drawn frame
+reused (elements measured, painted, copied). On exit UIDemo prints how many frames were idle, how many redrew the UI on the GPU, what
+drawn frames measured, painted and copied on average, and why frames were drawn (`UIContext::GetDrawReasonCount`: input, changed state,
+an incomplete fingerprint -- with the class -- or a changed draw list).
 
 **The UI cache (UIDemo).** The UI is drawn into a texture of its own only when its draw list changed (`UIDrawList::GetRevision`, which an
 idle `UpdateAndRender` leaves as it was); other frames show that texture with one full-screen textured quad through the same pipeline.

@@ -9,9 +9,12 @@
 #include "NoxUI/Core/UIPlatform.h"
 #include "NoxUI/Core/UIRef.h"
 #include "NoxUI/Core/UITheme.h"
+#include "NoxUI/Rendering/UIDrawList.h"
 
 // (UIFrameReplay and tools test for it: SetVerifyMode exists)
 #define NOXUI_HAS_VERIFY_MODE 1
+// (UIContext::SetLayoutCache / SetPaintCache and their counts)
+#define NOXUI_HAS_PARTIAL_FRAMES 1
 
 namespace NoxUI
 {
@@ -80,20 +83,39 @@ namespace NoxUI
 
         void UpdateAndRender(UIDrawList& drawList, const UIVec2& viewportSize, float dt);
 
-        // Idle frames. After the OnSync hooks, UpdateAndRender fingerprints the UI (UIElement::HashState of every visible element,
-        // plus the context's own state: hover, focus, toasts, theme, viewport). When no input came since the last frame, the last
-        // frame changed nothing itself (no transition, animation or timer running), the fingerprint equals the one it left and
-        // `drawList` is still the list it drew (UIDrawList::GetRevision), nothing would be drawn differently: layout and paint are
-        // skipped and `drawList` keeps what it holds. An element whose class has no complete fingerprint keeps every frame drawn.
-        // A callback that draws from state outside the UI (an icon painter reading a game value) calls RequestRedraw when it changes.
+        // Idle frames. Each frame runs the OnSync hooks, updates the hover against what is on screen (the last layout, as pointer
+        // events do), runs the style pass (OnUpdate: animations, transitions) and then keys every visible element (UIElement::HashState,
+        // with what it reads outside itself) -- with the context's own state (focus, pointer, toasts, theme, viewport) that is the UI's
+        // fingerprint. When no input came since the last frame, the fingerprint equals the last frame's and `drawList` is still the list
+        // it drew (UIDrawList::GetRevision), laying out and painting would draw the same: they are skipped and `drawList` keeps what it
+        // holds. An element whose class has no complete fingerprint keeps every frame drawn. A callback that draws from state outside
+        // the UI (an icon painter reading a game value) calls RequestRedraw when it changes.
         void SetIncremental(bool enabled) { m_Incremental = enabled; }
         bool IsIncremental() const { return m_Incremental; }
         void RequestRedraw() { m_ChangedSinceFrame = true; }
         // Whether the last UpdateAndRender kept the previous draw list (a backend may skip its upload: the revision did not change).
         bool WasLastFrameSkipped() const { return m_LastFrameSkipped; }
         uint64_t GetSkippedFrameCount() const { return m_SkippedFrames; }
+        // Drawn frames do only what changed (with SetIncremental). Layout cache: an element whose state and the state of everything
+        // inside it are what they were when it was last measured (arranged, in the same rect) keeps its size (its bounds and those
+        // inside) without measuring (arranging) again. Paint cache: an element whose state, bounds and clip, and those of everything
+        // inside it, are last frame's is copied from last frame's draw list -- one level meter moving repaints the meter and the
+        // containers around it, not the other 2,500 elements. Both are keyed by the fingerprints (UIElement::HashState, plus
+        // HashPaintDependencies for what an element reads outside itself). Layout must not change what paint reads other than the
+        // bounds (a parent may set a child's FixedSize or Visible while it lays it out; a child's own properties are checked again).
+        void SetLayoutCache(bool enabled) { m_LayoutCache = enabled; }
+        bool IsLayoutCacheEnabled() const { return m_LayoutCache; }
+        void SetPaintCache(bool enabled) { m_PaintCache = enabled; }
+        bool IsPaintCacheEnabled() const { return m_PaintCache; }
+        // The last drawn frame: elements measured and arranged (not reused), elements painted, and elements copied from the frame
+        // before (each with everything inside it).
+        uint32_t GetLastMeasuredCount() const { return m_LastMeasured; }
+        uint32_t GetLastArrangedCount() const { return m_LastArranged; }
+        uint32_t GetLastPaintedCount() const { return m_LastPainted; }
+        uint32_t GetLastReplayedCount() const { return m_LastReplayed; }
         // Verify mode (tests, debugging): a frame that would be skipped is drawn in full anyway and compared with what it would have
-        // kept -- the draw list byte for byte and the fingerprint; a difference is an error (a state some HashState misses).
+        // kept -- the draw list byte for byte and the fingerprint; a difference is an error (a state some HashState misses). A drawn
+        // frame that copied elements from the last one (SetPaintCache) is painted again in full and compared the same way.
         void SetVerifyMode(bool enabled) { m_VerifyMode = enabled; }
         uint64_t GetVerifyFailureCount() const { return m_VerifyFailures; }
         uint64_t GetVerifiedFrameCount() const { return m_VerifiedFrames; }
@@ -211,6 +233,16 @@ namespace NoxUI
         bool m_VerifyMode = false;
         uint64_t m_VerifyFailures = 0;
         uint64_t m_VerifiedFrames = 0;
+        // Layout and paint caches: last frame's list (swapped out of `drawList`, so nothing is copied), and the generation the
+        // elements' paint records must carry to be read from it (a new one whenever it does not hold the last frame's output).
+        bool m_LayoutCache = true;
+        bool m_PaintCache = true;
+        UIDrawList m_PreviousList;
+        uint64_t m_PaintGeneration = 0;
+        uint32_t m_LastMeasured = 0;
+        uint32_t m_LastArranged = 0;
+        uint32_t m_LastPainted = 0;
+        uint32_t m_LastReplayed = 0;
         DrawReason m_LastDrawReason = DrawReason::Changed;
         uint64_t m_DrawReasonCounts[6]{};
         const std::type_info* m_IncompleteType = nullptr;

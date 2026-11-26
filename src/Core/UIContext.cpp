@@ -1,6 +1,7 @@
 #include "NoxUI/Core/UIContext.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstring>
 #if defined(__GNUG__)
     #include <cxxabi.h>
@@ -616,10 +617,45 @@ namespace NoxUI
         m_Root->SyncRecursive();
         if (m_Overlay)
             m_Overlay->SyncRecursive();
+        ++UIElement::s_FrameSerial; // (what callbacks give is settled for this frame now)
 
-        // An idle frame: nothing came in, the last frame changed nothing, the fingerprint is the one it left and `drawList` still
-        // holds what it drew -- the frame would draw the same, so it is not drawn (SetIncremental). Verify mode draws it and compares.
+        // Hover follows the pointer over what is on screen -- the last frame's layout, as pointer events see it -- before anything
+        // is keyed (enter / leave handlers may change other elements), and the styles resolve for it this frame.
+        if (!m_Captured && !m_DragActive)
+            UpdateHover(m_LastMousePos);
+
+        // The style pass (animations, transitions), then every visible element is keyed: its own fingerprint and the one of
+        // everything inside it, with the frame's epoch (what every element's layout and paint read besides its own state). The
+        // root's key is the UI's fingerprint, and the layout and paint caches start from the same keys.
         const bool track = m_Incremental || m_VerifyMode;
+        const bool layoutCache = m_Incremental && m_LayoutCache;
+        const bool paintCache = m_Incremental && m_PaintCache;
+        {
+            const UIGlyphCache& glyphs = UIGlyphCache::Get();
+            const Ref<UIFont> defaultFont = UIFont::GetDefault();
+            UIStateHasher epoch;
+            epoch(viewportSize, static_cast<const void*>(m_Theme.get()), m_Theme->GetVersion(), glyphs.GetGeneration(), glyphs.ResetRequested(),
+                  static_cast<uint64_t>(glyphs.GetTextureID()), static_cast<const void*>(defaultFont.get()),
+                  defaultFont ? static_cast<uint64_t>(defaultFont->GetAtlasTextureID()) : 0ull);
+            UIElement::s_CacheEpoch = epoch.Value();
+            ++UIElement::s_KeyPass;
+            UIElement::s_FirstIncomplete = nullptr;
+            m_TraceNow.clear();
+            UIElement::s_Trace = m_TraceStateChanges ? &m_TraceNow : nullptr;
+        }
+        m_Root->UpdateStylesRecursive(*m_Theme, dt);
+        if (m_Overlay)
+            m_Overlay->UpdateStylesRecursive(*m_Theme, dt);
+        if (track)
+        {
+            m_Root->KeyTree();
+            if (m_Overlay)
+                m_Overlay->KeyTree();
+        }
+        UIElement::s_Trace = nullptr;
+
+        // An idle frame: nothing came in, the fingerprint is the one the last frame had and `drawList` still holds what it drew --
+        // laying out and painting would draw the same, so it is not done (SetIncremental). Verify mode does it and compares.
         bool complete = false;
         const uint64_t before = track ? HashFrame(viewportSize, dt, complete) : 0;
         // (the last frame -- drawn in full, or itself idle -- began from this same fingerprint: a full frame and the syncs after it
@@ -650,12 +686,21 @@ namespace NoxUI
             verifyCopy = drawList;
             verifying = true;
         }
+
+        // Last frame's list for the paint records: `drawList` holds it when nothing changed it since; otherwise none can be read.
+        static std::atomic<uint64_t> s_NextPaintGeneration{ 1 };
+        if (paintCache && m_PaintGeneration != 0 && &drawList == m_LastOutputList && drawList.GetRevision() == m_LastOutputRevision)
+            m_PreviousList.SwapContents(drawList);
+        else
+        {
+            m_PaintGeneration = s_NextPaintGeneration.fetch_add(1, std::memory_order_relaxed);
+            m_PreviousList.Clear(viewportSize);
+        }
         drawList.Clear(viewportSize);
 
-        m_Root->UpdateStylesRecursive(*m_Theme, dt);
-        if (m_Overlay)
-            m_Overlay->UpdateStylesRecursive(*m_Theme, dt);
-
+        UIElement::s_LayoutCache = layoutCache;
+        UIElement::s_MeasuredCount = 0;
+        UIElement::s_ArrangedCount = 0;
         UIElement::BeginLayoutPass();
         m_Root->Measure();
         m_Root->Arrange({ { 0.0f, 0.0f }, viewportSize });
@@ -665,13 +710,74 @@ namespace NoxUI
             m_Overlay->Arrange({ { 0.0f, 0.0f }, viewportSize });
         }
         UIElement::EndLayoutPass();
+        UIElement::s_LayoutCache = false;
+        m_LastMeasured = UIElement::s_MeasuredCount;
+        m_LastArranged = UIElement::s_ArrangedCount;
 
-        if (!m_Captured && !m_DragActive)
-            UpdateHover(m_LastMousePos);
+        if (paintCache)
+        {
+            // Keyed after layout and hover (what paint reads), then painted: what is unchanged is copied from last frame's list.
+            UIElement::KeyContext keys;
+            keys.Hovered = m_Hovered.get();
+            keys.Captured = m_Captured.get();
+            keys.Focused = m_Focused.get();
+            UIStateHasher pointer;
+            pointer(m_LastMousePos, m_Modifiers, s_Modifiers, s_ButtonsHeld);
+            keys.PointerHash = pointer.Value();
+            m_Root->KeyPaintTree(nullptr, keys);
+            if (m_Overlay)
+                m_Overlay->KeyPaintTree(nullptr, keys);
 
-        m_Root->PaintRecursive(drawList, *m_Theme);
-        if (m_Overlay)
-            m_Overlay->PaintRecursive(drawList, *m_Theme);
+            UIElement::PaintPass pass;
+            pass.Out = &drawList;
+            pass.Old = &m_PreviousList;
+            pass.Theme = m_Theme.get();
+            pass.Generation = m_PaintGeneration;
+            // (a drag in flight: elements paint from the pointer and the payload -- nothing is copied while it lasts)
+            pass.Replay = !m_DragActive;
+            m_Root->PaintCached(pass, 0, 0, 0, true, 0, 0, 0);
+            if (m_Overlay)
+                m_Overlay->PaintCached(pass, 0, 0, 0, true, 0, 0, 0);
+            m_LastPainted = pass.Painted;
+            m_LastReplayed = pass.Replayed;
+
+            if (m_VerifyMode && pass.Replayed > 0)
+            {
+                // Painted again in full: the copied elements must have drawn exactly what painting them draws.
+                ++m_VerifiedFrames;
+                UIDrawList full;
+                full.Clear(viewportSize);
+                m_Root->PaintRecursive(full, *m_Theme);
+                if (m_Overlay)
+                    m_Overlay->PaintRecursive(full, *m_Theme);
+                const auto& prims = drawList.GetPrimitives();
+                const auto& clips = drawList.GetClipRects();
+                const auto& fullPrims = full.GetPrimitives();
+                const auto& fullClips = full.GetClipRects();
+                const bool same = prims.size() == fullPrims.size() && clips.size() == fullClips.size() &&
+                                  (prims.empty() || std::memcmp(prims.data(), fullPrims.data(), prims.size() * sizeof(UIPrimitive)) == 0) &&
+                                  (clips.empty() || std::memcmp(clips.data(), fullClips.data(), clips.size() * sizeof(UIClipRect)) == 0);
+                if (!same)
+                {
+                    ++m_VerifyFailures;
+                    size_t firstDiff = 0;
+                    while (firstDiff < std::min(prims.size(), fullPrims.size()) &&
+                           std::memcmp(&prims[firstDiff], &fullPrims[firstDiff], sizeof(UIPrimitive)) == 0)
+                        ++firstDiff;
+                    LogMessage(LogLevel::Error, "UIContext verify: copied elements drew differently (" + std::to_string(prims.size()) + " primitives, painted in full " +
+                                                    std::to_string(fullPrims.size()) + ", first difference at " + std::to_string(firstDiff) + ")");
+                }
+            }
+        }
+        else
+        {
+            m_Root->PaintRecursive(drawList, *m_Theme);
+            if (m_Overlay)
+                m_Overlay->PaintRecursive(drawList, *m_Theme);
+            m_PaintGeneration = 0; // (no records from this frame: the next one paints everything)
+            m_LastPainted = 0;
+            m_LastReplayed = 0;
+        }
 
         AdvanceHoverTime(dt);
         if (m_Hovered && !m_Captured)
@@ -775,8 +881,8 @@ namespace NoxUI
                                   drawList.GetViewportSize() == verifyCopy.GetViewportSize() &&
                                   (prims.empty() || std::memcmp(prims.data(), keptPrims.data(), prims.size() * sizeof(UIPrimitive)) == 0) &&
                                   (clips.empty() || std::memcmp(clips.data(), keptClips.data(), clips.size() * sizeof(UIClipRect)) == 0);
-            bool completeAfter = false;
-            const bool sameState = HashFrame(viewportSize, dt, completeAfter) == before;
+            // (and nothing the fingerprint covers changed during the frame: the next one may be skipped on it)
+            const bool sameState = m_Root->OwnKeysHold() && (!m_Overlay || m_Overlay->OwnKeysHold());
             if (!sameList || !sameState)
             {
                 ++m_VerifyFailures;
@@ -829,16 +935,21 @@ namespace NoxUI
             h(toast.Note.Severity, toast.Note.Title, toast.Note.Message, toast.Note.DurationSeconds, toast.Remaining, toast.Age, toast.HasAccent,
               toast.Accent, toast.Bounds);
         const uint64_t contextHash = h.Value();
+        // (the trees: their keys from the style pass -- every visible element's own fingerprint and the ones inside)
         h(static_cast<const void*>(m_Root.get()), static_cast<const void*>(m_Overlay.get()));
-        if (m_TraceStateChanges)
+        bool treesKeyed = true;
+        for (const UIElement* tree : { m_Root.get(), m_Overlay.get() })
         {
-            m_TraceNow.clear();
-            h.Trace = &m_TraceNow;
+            if (!tree)
+                continue;
+            h(tree->Visible, tree->m_TreeKey);
+            treesKeyed = treesKeyed && (!tree->Visible || (tree->m_TreeKeyed && tree->m_KeyPass == UIElement::s_KeyPass));
         }
-        if (m_Root)
-            m_Root->HashTree(h);
-        if (m_Overlay)
-            m_Overlay->HashTree(h);
+        if (!treesKeyed)
+        {
+            h.Complete = false;
+            h.IncompleteType = UIElement::s_FirstIncomplete;
+        }
         if (m_TraceStateChanges)
         {
             // (the context's own state as one entry, then every element whose own fingerprint is new or changed)

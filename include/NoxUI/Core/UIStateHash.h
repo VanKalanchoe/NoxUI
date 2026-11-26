@@ -19,6 +19,26 @@
 
 namespace NoxUI
 {
+    // Folds one 64-bit value into a running key (the layout and paint caches combine an element's own key with its children's and
+    // its bounds): a multiply-xorshift mix per value, cheaper than a UIStateHasher for a few words.
+    inline uint64_t HashCombine(uint64_t seed, uint64_t value)
+    {
+        value *= 0x9E3779B97F4A7C15ull;
+        value ^= value >> 32;
+        seed = (seed ^ value) * 0xBF58476D1CE4E5B9ull;
+        return seed ^ (seed >> 31);
+    }
+    inline uint64_t HashCombineFloat(uint64_t seed, float value)
+    {
+        uint32_t bits;
+        std::memcpy(&bits, &value, sizeof(bits));
+        return HashCombine(seed, static_cast<uint64_t>(bits) | (uint64_t{ 1 } << 32));
+    }
+    inline uint64_t HashCombinePointer(uint64_t seed, const void* pointer)
+    {
+        return HashCombine(seed, static_cast<uint64_t>(reinterpret_cast<uintptr_t>(pointer)));
+    }
+
     // The fingerprint of what a UI draws: every element adds the state its layout and paint read (UIElement::HashState). When the
     // fingerprint after the OnSync hooks equals the one the last full frame left, and that frame changed nothing itself, nothing can
     // draw differently: UIContext reuses the last draw list instead of laying out and painting again (retained mode's idle frames).

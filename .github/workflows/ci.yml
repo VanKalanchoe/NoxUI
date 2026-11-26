@@ -67,13 +67,19 @@ jobs:
         run: |
           cmake --build build --config ${{ matrix.config }} --parallel
 
-      # The demo gallery replayed headless with seeded input: every idle frame NoxUI would skip is drawn in full anyway and compared
-      # with what it kept (verify mode) -- a widget whose fingerprint misses some state fails here.
-      - name: Run UIFrameReplay (idle frames verified)
+      # The demo gallery replayed headless with seeded input. Verify mode: every idle frame NoxUI would skip, and every drawn frame
+      # that copied elements from the last one, is drawn in full anyway and compared with what it kept -- a widget whose fingerprint
+      # misses some state fails here. Then every frame is recorded with idle frames and the layout / paint caches off (--no-incremental)
+      # and compared, byte for byte, with the frames the caches give.
+      - name: Run UIFrameReplay (idle frames and partial frames verified)
         shell: pwsh
         run: |
           foreach ($seed in 1, 2, 7) {
             ./build/${{ matrix.config }}/UIFrameReplay.exe --seed $seed --verify
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            ./build/${{ matrix.config }}/UIFrameReplay.exe --seed $seed --no-incremental --record full_$seed.txt
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            ./build/${{ matrix.config }}/UIFrameReplay.exe --seed $seed --compare full_$seed.txt
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
 

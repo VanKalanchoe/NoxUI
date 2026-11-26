@@ -4,8 +4,11 @@
 //
 //   UIFrameReplay --record frames.txt      (the reference build)
 //   UIFrameReplay --compare frames.txt     (the build under test: the first frame that differs, with what differs; exit code 1)
-//   UIFrameReplay --verify                 (UIContext's own verify mode: every frame also drawn the full way and compared)
-//   UIFrameReplay --frames N --seed S       (also prints UpdateAndRender's average and worst time)
+//   UIFrameReplay --verify                 (UIContext's own verify mode: idle frames, and drawn frames that copied elements from
+//                                           the last one, also drawn the full way and compared)
+//   UIFrameReplay --no-incremental         (idle frames and the layout / paint caches off: every frame laid out and painted in full --
+//                                           record with it, compare without it: the caches must give exactly the same frames)
+//   UIFrameReplay --frames N --seed S       (also prints UpdateAndRender's average and worst time, and how much drawn frames reused)
 //
 // The script: tab switches, pointer walks and jumps, clicks, drags, right clicks, wheel, keys and typed text, Escape, idle stretches,
 // toasts and window resizes -- the same sequence every run for one seed.
@@ -180,6 +183,7 @@ int main(int argc, char** argv)
                            UIKey::End, UIKey::Space, UIKey::Delete, UIKey::PageDown };
 
     double clockSeconds = 0.0;
+    uint64_t drawnFrames = 0, measured = 0, arranged = 0, painted = 0, replayed = 0;
     for (frameNumber = 0; frameNumber < frames; ++frameNumber)
     {
         // A frame time that varies, as a real one does (half to one and a half of 1/60 s): settled animations must stay settled.
@@ -247,6 +251,16 @@ int main(int argc, char** argv)
             totalMs += ms;
             worstMs = std::max(worstMs, ms);
         }
+#if defined(NOXUI_HAS_PARTIAL_FRAMES)
+        if (!context.WasLastFrameSkipped())
+        {
+            ++drawnFrames;
+            measured += context.GetLastMeasuredCount();
+            arranged += context.GetLastArrangedCount();
+            painted += context.GetLastPaintedCount();
+            replayed += context.GetLastReplayedCount();
+        }
+#endif
 
         for (const UIPrimitive& prim : drawList.GetPrimitives())
             ++primitivesByType[prim.type < 8 ? prim.type : 7];
@@ -277,9 +291,19 @@ int main(int argc, char** argv)
 #if defined(NOXUI_HAS_VERIFY_MODE)
     std::printf("[UIFrameReplay] idle frames skipped: %llu of %d", static_cast<unsigned long long>(context.GetSkippedFrameCount()), frames);
     if (verify)
-        std::printf("; verify: %llu idle frames drawn and compared, %llu differed", static_cast<unsigned long long>(context.GetVerifiedFrameCount()),
-                    static_cast<unsigned long long>(context.GetVerifyFailureCount()));
+        std::printf("; verify: %llu frames drawn in full and compared (idle ones, and those that copied elements), %llu differed",
+                    static_cast<unsigned long long>(context.GetVerifiedFrameCount()), static_cast<unsigned long long>(context.GetVerifyFailureCount()));
     std::printf("\n");
+#endif
+#if defined(NOXUI_HAS_PARTIAL_FRAMES)
+    if (drawnFrames > 0)
+    {
+        const double n = static_cast<double>(drawnFrames);
+        std::printf("[UIFrameReplay] per drawn frame (%llu): %.0f elements measured, %.0f arranged, %.0f painted, %.0f copied from the last frame\n",
+                    static_cast<unsigned long long>(drawnFrames), measured / n, arranged / n, painted / n, replayed / n);
+    }
+#endif
+#if defined(NOXUI_HAS_VERIFY_MODE)
     if (verify && context.GetVerifyFailureCount() > 0)
         return 1;
 #endif
