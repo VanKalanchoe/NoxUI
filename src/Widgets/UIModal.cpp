@@ -16,6 +16,12 @@ namespace NoxUI
         class UIModalBackdrop : public UIAnchorBox
         {
         public:
+            void HashState(UIStateHasher& h) const override
+            {
+                UIAnchorBox::HashState(h);
+                h(static_cast<const void*>(m_Context));
+            }
+            const std::type_info& StateHashClass() const override { return typeid(UIModalBackdrop); }
             UIModalBackdrop(UIContext* context, std::function<void()> onDismiss)
                 : m_Context(context)
                 , m_OnDismiss(std::move(onDismiss))

@@ -5,6 +5,7 @@
 #include <string>
 
 #include "NoxUI/Core/UIElement.h"
+#include "NoxUI/Rendering/UIDrawList.h"
 
 namespace NoxUI
 {
@@ -20,6 +21,7 @@ namespace NoxUI
     class UIIconButton : public UIElement
     {
     public:
+        NOXUI_STATE_HASH(UIIconButton)
         using IconPainter = std::function<void(UIDrawList& drawList, const UIRect& bounds, const UIColor& color)>;
         enum class ActiveLook : uint8_t { Fill, Tint };
 
@@ -50,5 +52,6 @@ namespace NoxUI
 
     private:
         void Activate();
+        mutable UIPaintMemo m_PaintMemo; // (HashPaintOutput: what it painted last for the fingerprint)
     };
 }

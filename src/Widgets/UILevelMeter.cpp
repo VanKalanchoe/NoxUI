@@ -42,7 +42,7 @@ namespace NoxUI
         return Orientation == UIOrientation::Vertical ? UIVec2{ 22.0f, 120.0f } : UIVec2{ 120.0f, 34.0f };
     }
 
-    void UILevelMeter::OnUpdate(float)
+    void UILevelMeter::OnPoll()
     {
         if (Source)
             Levels = Source();
@@ -136,5 +136,11 @@ namespace NoxUI
                 d.AddText(text, nullptr, { min.x + 6.0f, top + (barHeight - fontSize) * 0.5f }, fontSize, textColor);
             }
         }
+    }
+
+    void UILevelMeter::HashState(UIStateHasher& h) const
+    {
+        UIElement::HashState(h);
+        h(Orientation, Levels.RmsLeft, Levels.RmsRight, Levels.PeakLeft, Levels.PeakRight, MinDb, MaxDb, LoudDb, ClipDb, TickStepDb, ShowRms, ShowText, AutoTooltip);
     }
 }

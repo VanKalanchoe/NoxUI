@@ -191,4 +191,11 @@ namespace NoxUI
         d.AddText(range, nullptr, { b.Min.x + 4.0f, b.Min.y + 2.0f }, 11.5f, dim);
         d.PopClipRect();
     }
+
+    void UIChannelCurves::HashState(UIStateHasher& h) const
+    {
+        UIElement::HashState(h);
+        h(NothingText, NoValuesText, NoKeysText, m_Key, m_Channel);
+        HashPaintOutput(h, m_PaintMemo); // (what the callbacks give: keys, curves, playhead, range)
+    }
 }

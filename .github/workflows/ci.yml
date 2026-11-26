@@ -67,6 +67,16 @@ jobs:
         run: |
           cmake --build build --config ${{ matrix.config }} --parallel
 
+      # The demo gallery replayed headless with seeded input: every idle frame NoxUI would skip is drawn in full anyway and compared
+      # with what it kept (verify mode) -- a widget whose fingerprint misses some state fails here.
+      - name: Run UIFrameReplay (idle frames verified)
+        shell: pwsh
+        run: |
+          foreach ($seed in 1, 2, 7) {
+            ./build/${{ matrix.config }}/UIFrameReplay.exe --seed $seed --verify
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
       - name: Run UIDemo Smoke Test (NRI_GRAPHICS_API_NONE)
         shell: pwsh
         env:

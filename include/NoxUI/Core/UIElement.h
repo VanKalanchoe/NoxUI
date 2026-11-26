@@ -4,16 +4,19 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <typeinfo>
 #include <utility>
 #include <vector>
 
 #include "NoxUI/Core/UIRef.h"
+#include "NoxUI/Core/UIStateHash.h"
 #include "NoxUI/Core/UITheme.h"
 #include "NoxUI/Core/UITypes.h"
 
 namespace NoxUI
 {
     class UIDrawList;
+    struct UIPaintMemo;
 
     class UIElement : public RefCounted
     {
@@ -60,6 +63,15 @@ namespace NoxUI
         // Style & Paint
         void UpdateStylesRecursive(const UITheme& theme, float dt);
         void PaintRecursive(UIDrawList& drawList, const UITheme& theme);
+
+        // Fingerprint (UIStateHash.h): HashState adds everything this element's own layout and paint read -- its fields, its
+        // interaction state (hover, drag, caret, scroll), its animation state, values read through callbacks -- and not its children
+        // (HashTree adds those). A class that overrides it also overrides StateHashClass to return its own typeid: an element whose
+        // class does not (a subclass with fields of its own) keeps every frame drawn in full, nothing is skipped for it.
+        virtual void HashState(UIStateHasher& h) const;
+        virtual const std::type_info& StateHashClass() const { return typeid(UIElement); }
+        // This element and, when visible, everything inside it.
+        void HashTree(UIStateHasher& h) const;
 
         // Hit-testing (reverse paint order)
         virtual UIElement* HitTest(const UIVec2& pos);
@@ -139,6 +151,9 @@ namespace NoxUI
         std::function<bool(const UIDragPayload&)> OnDrop;
 
     protected:
+        // Values the element reads from outside the UI every frame (a level meter's Source, a property grid's model): run with the
+        // OnSync hooks (after this element's own), before the frame is fingerprinted -- so an idle frame cannot miss a change there.
+        virtual void OnPoll() {}
         virtual void OnUpdate(float dt) {}
         virtual UIVec2 ComputeDesiredSize();
         virtual void ArrangeChildren(const UIRect& contentRect);
@@ -149,6 +164,10 @@ namespace NoxUI
         virtual UIRect GetChildClipRect() const { return m_Bounds; }
 
         const UIStyleBox& GetResolvedStyle() const { return m_CurrentStyle; }
+        // For HashState of a widget that paints what callbacks give (curve samples, an icon painter, values read live): paints the
+        // element (OnPaint, at its last bounds, with the current context's theme) into a scratch list and hashes the primitives --
+        // exactly what it would draw now, whatever the callbacks read. Its measure must not depend on them.
+        void HashPaintOutput(UIStateHasher& h, UIPaintMemo& memo) const;
 
     private:
         uint64_t m_Id = 0;
@@ -161,6 +180,9 @@ namespace NoxUI
         UIState m_State = UIState::Normal;
         UIStyleBox m_CurrentStyle{};
         bool m_HasResolvedStyle = false;
+        // The current style is the theme's style for StyleClass / StyleVariant / the state, exactly (no transition left): the
+        // fingerprint then needs only those (theme version, class, variant, state), not the box.
+        bool m_StyleSettled = false;
 
         // HeightForWidth's answers in the current layout pass (two widths: a row asks its label and value at theirs, a stack at its own).
         uint64_t m_HeightForWidthPass = 0;

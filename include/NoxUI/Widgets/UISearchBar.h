@@ -15,6 +15,7 @@ namespace NoxUI
     class UISearchBar : public UIStackBox
     {
     public:
+        NOXUI_STATE_HASH(UISearchBar)
         explicit UISearchBar(
             std::string placeholder = "Search...",
             std::function<void(const std::string&)> onSearchChanged = {});

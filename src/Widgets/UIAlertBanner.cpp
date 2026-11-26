@@ -67,4 +67,10 @@ namespace NoxUI
             glm::vec4(2.0f)
         );
     }
+
+    void UIAlertBanner::HashState(UIStateHasher& h) const
+    {
+        UIStackBox::HashState(h);
+        h(m_Accent);
+    }
 }

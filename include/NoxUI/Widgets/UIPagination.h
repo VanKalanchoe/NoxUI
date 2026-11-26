@@ -13,6 +13,7 @@ namespace NoxUI
     class UIPagination : public UIStackBox
     {
     public:
+        NOXUI_STATE_HASH(UIPagination)
         explicit UIPagination(
             int totalPages = 5,
             int currentPage = 1,

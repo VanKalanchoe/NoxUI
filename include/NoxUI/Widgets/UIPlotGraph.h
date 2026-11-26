@@ -18,6 +18,7 @@ namespace NoxUI
     class UIPlotGraph : public UIElement
     {
     public:
+        NOXUI_STATE_HASH(UIPlotGraph)
         explicit UIPlotGraph(std::string title = {}, UIPlotMode mode = UIPlotMode::Line);
 
         void SetValues(std::vector<float> values);

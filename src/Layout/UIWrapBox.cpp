@@ -98,4 +98,10 @@ namespace NoxUI
             rowH = std::max(rowH, sz.y);
         }
     }
+
+    void UIWrapBox::HashState(UIStateHasher& h) const
+    {
+        UIElement::HashState(h);
+        h(HSpacing, VSpacing);
+    }
 }

@@ -12,6 +12,7 @@ namespace NoxUI
     class UISpinBox : public UIStackBox
     {
     public:
+        NOXUI_STATE_HASH(UISpinBox)
         explicit UISpinBox(
             float initialValue = 0.0f,
             float step = 1.0f,

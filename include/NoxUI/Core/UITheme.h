@@ -32,6 +32,17 @@ namespace NoxUI
         float TransitionSeconds = 0.10f;
 
         static UIStyleBox Lerp(const UIStyleBox& a, const UIStyleBox& b, float t);
+        // Every field the same value (floats compared as values).
+        static bool Equal(const UIStyleBox& a, const UIStyleBox& b)
+        {
+            return a.FillColor == b.FillColor && a.FillColorBottom == b.FillColorBottom && a.UseGradient == b.UseGradient &&
+                   a.BorderColor == b.BorderColor && a.BorderThickness == b.BorderThickness && a.ShadowColor == b.ShadowColor &&
+                   a.ShadowOffset == b.ShadowOffset && a.ShadowBlur == b.ShadowBlur && a.CornerRadius.TopLeft == b.CornerRadius.TopLeft &&
+                   a.CornerRadius.TopRight == b.CornerRadius.TopRight && a.CornerRadius.BottomRight == b.CornerRadius.BottomRight &&
+                   a.CornerRadius.BottomLeft == b.CornerRadius.BottomLeft && a.Padding.Left == b.Padding.Left && a.Padding.Top == b.Padding.Top &&
+                   a.Padding.Right == b.Padding.Right && a.Padding.Bottom == b.Padding.Bottom && a.TextColor == b.TextColor &&
+                   a.FontSize == b.FontSize && a.TransitionSeconds == b.TransitionSeconds;
+        }
     };
 
     class UITheme : public RefCounted
@@ -50,6 +61,8 @@ namespace NoxUI
 
         // Polls any pending hot reload on the main thread. Returns true if reloaded.
         bool PollHotReload();
+        // Changes whenever a token or a style may have changed (SetToken, SetStyle, LoadFromFile): what was drawn may look different.
+        uint64_t GetVersion() const { return m_Version; }
 
         void SetToken(const std::string& name, const UIColor& color);
         UIColor GetToken(std::string_view name, const UIColor& fallback = { 1.0f, 1.0f, 1.0f, 1.0f }) const;
@@ -65,5 +78,6 @@ namespace NoxUI
         std::unordered_map<std::string, UIStyleBox> m_Styles;
         std::filesystem::path m_WatchedPath;
         bool m_PendingReload = false;
+        uint64_t m_Version = 0;
     };
 }

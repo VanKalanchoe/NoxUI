@@ -162,4 +162,10 @@ namespace NoxUI
             style.TextColor
         );
     }
+
+    void UIRangeSlider::HashState(UIStateHasher& h) const
+    {
+        UIElement::HashState(h);
+        h(MinLimit, MaxLimit, m_Low, m_High, m_Dragging);
+    }
 }

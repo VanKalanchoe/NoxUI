@@ -15,6 +15,7 @@ namespace NoxUI
     class UISplitButton : public UIStackBox
     {
     public:
+        NOXUI_STATE_HASH(UISplitButton)
         UISplitButton(
             UIContext& context,
             std::string primaryLabel,

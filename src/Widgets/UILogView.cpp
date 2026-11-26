@@ -34,6 +34,20 @@ namespace NoxUI
         class UILogListSurface : public UIElement
         {
         public:
+
+            void HashState(UIStateHasher& h) const override
+
+            {
+
+                UIElement::HashState(h);
+
+                h(m_FilteredVersion, m_Filtered.size(), m_ScrollOffset, m_PinToBottom);
+
+                m_ScrollBar.Hash(h);
+
+            }
+
+            const std::type_info& StateHashClass() const override { return typeid(UILogListSurface); }
             UILogListSurface()
             {
                 StyleClass = "TextInput";
@@ -48,6 +62,7 @@ namespace NoxUI
             void SetFiltered(std::vector<UILogEntry> entries, bool autoScroll)
             {
                 m_Filtered = std::move(entries);
+                ++m_FilteredVersion; // (the entries shown changed)
                 if (autoScroll)
                     m_PinToBottom = true;
             }
@@ -178,6 +193,7 @@ namespace NoxUI
             std::vector<UILogEntry> m_Filtered;
             float m_ScrollOffset = 0.0f;
             bool m_PinToBottom = true;
+            uint64_t m_FilteredVersion = 0; // (++ with every SetFiltered: the fingerprint of the entries shown)
         };
     }
 
@@ -230,5 +246,11 @@ namespace NoxUI
         }
         if (auto* surface = static_cast<UILogListSurface*>(m_ListSurface.get()))
             surface->SetFiltered(std::move(filtered), AutoScroll);
+    }
+
+    void UILogView::HashState(UIStateHasher& h) const
+    {
+        UIStackBox::HashState(h);
+        h(MaxEntries, AutoScroll, m_Filter, m_Entries.size(), m_ListSurface); // (the entries shown: the list surface)
     }
 }

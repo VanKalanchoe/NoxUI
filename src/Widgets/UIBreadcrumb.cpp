@@ -51,4 +51,10 @@ namespace NoxUI
             AddChild(btn);
         }
     }
+
+    void UIBreadcrumb::HashState(UIStateHasher& h) const
+    {
+        UIWrapBox::HashState(h);
+        h(Separator, m_Segments);
+    }
 }

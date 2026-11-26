@@ -12,6 +12,7 @@ namespace NoxUI
     class UIProgressBar : public UIElement
     {
     public:
+        NOXUI_STATE_HASH(UIProgressBar)
         explicit UIProgressBar(float fraction = 0.0f, std::string overlayText = {});
 
         void SetFraction(float fraction);

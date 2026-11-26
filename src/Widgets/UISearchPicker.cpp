@@ -25,6 +25,26 @@ namespace NoxUI
         class UISearchPickerBackdrop final : public UIAnchorBox
         {
         public:
+
+            void HashState(UIStateHasher& h) const override
+
+            {
+
+                UIAnchorBox::HashState(h);
+
+                h(static_cast<const void*>(m_Context), m_Anchor, m_Current, m_Popup, m_Search, m_Scroll, m_HasFirst, m_First);
+
+                h(m_Settings.Placeholder, m_Settings.NoneLabel, m_Settings.NoMatches, m_Settings.MaxShown, m_Settings.AlignRight, m_Settings.MinWidth, m_Settings.MaxWidth);
+
+                h.Add(m_Options.size());
+
+                for (const UISearchPickerOption& option : m_Options)
+
+                    h(option.Label, option.Detail, option.Id);
+
+            }
+
+            const std::type_info& StateHashClass() const override { return typeid(UISearchPickerBackdrop); }
             UISearchPickerBackdrop(UIContext* context, const UIRect& anchor, std::vector<UISearchPickerOption> options, uint64_t current,
                                    std::function<void(uint64_t)> onPick, UISearchPickerSettings settings)
                 : m_Context(context), m_Anchor(anchor), m_Options(std::move(options)), m_Current(current), m_OnPick(std::move(onPick)),

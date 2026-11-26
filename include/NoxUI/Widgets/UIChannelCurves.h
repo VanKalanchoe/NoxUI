@@ -4,6 +4,7 @@
 #include <string>
 
 #include "NoxUI/Core/UIElement.h"
+#include "NoxUI/Rendering/UIDrawList.h"
 
 namespace NoxUI
 {
@@ -19,6 +20,7 @@ namespace NoxUI
     class UIChannelCurves : public UIElement
     {
     public:
+        NOXUI_STATE_HASH(UIChannelCurves)
         UIChannelCurves();
 
         std::function<int()> ChannelCount;                  // 0..4; 0: no values (NoValuesText); -1: nothing selected (NothingText)
@@ -57,5 +59,6 @@ namespace NoxUI
 
         int m_Key = -1, m_Channel = 0;
         float m_Low = 0.0f, m_High = 1.0f, m_Duration = 1.0f;
+        mutable UIPaintMemo m_PaintMemo; // (HashPaintOutput: what it painted last for the fingerprint)
     };
 }

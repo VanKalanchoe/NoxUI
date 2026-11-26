@@ -82,4 +82,10 @@ namespace NoxUI
             drawList.AddText(Label, nullptr, { boxMax.x + labelGap, textY }, style.FontSize, style.TextColor);
         }
     }
+
+    void UICheckBox::HashState(UIStateHasher& h) const
+    {
+        UIElement::HashState(h);
+        h(Label, Checked);
+    }
 }

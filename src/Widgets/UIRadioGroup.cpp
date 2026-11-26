@@ -12,6 +12,12 @@ namespace NoxUI
         class UIRadioOption : public UIElement
         {
         public:
+            void HashState(UIStateHasher& h) const override
+            {
+                UIElement::HashState(h);
+                h(m_Selected, m_Label);
+            }
+            const std::type_info& StateHashClass() const override { return typeid(UIRadioOption); }
             UIRadioOption(std::string label, bool selected, std::function<void()> onClick)
                 : m_Selected(selected)
                 , m_OnClick(std::move(onClick))
@@ -166,5 +172,11 @@ namespace NoxUI
             }));
             AddChild(opt);
         }
+    }
+
+    void UIRadioGroup::HashState(UIStateHasher& h) const
+    {
+        UIStackBox::HashState(h);
+        h(m_Items, m_SelectedIndex);
     }
 }

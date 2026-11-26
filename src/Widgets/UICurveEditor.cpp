@@ -194,8 +194,9 @@ namespace NoxUI
         if (e.Button != UIMouseButton::Left)
             return false;
 
-        const bool quick = m_LastClickTime >= 0.0 && m_Time - m_LastClickTime < kDoubleClickSeconds;
-        m_LastClickTime = m_Time;
+        const double now = static_cast<double>(GetTimeMs()) / 1000.0; // (the UI's clock: SetTimeSource)
+        const bool quick = m_LastClickTime >= 0.0 && now - m_LastClickTime < kDoubleClickSeconds;
+        m_LastClickTime = now;
         if (hit >= 0)
         {
             m_DraggingIndex = hit;
@@ -259,10 +260,6 @@ namespace NoxUI
         return MinSize;
     }
 
-    void UICurveEditor::OnUpdate(float dt)
-    {
-        m_Time += static_cast<double>(dt);
-    }
 
     void UICurveEditor::OnPaint(UIDrawList& drawList, const UITheme& theme)
     {
@@ -344,5 +341,12 @@ namespace NoxUI
             std::snprintf(text, sizeof(text), "x %.3g .. %.3g   y %.3g .. %.3g", m_Low.x, m_High.x, m_Low.y, m_High.y);
             drawList.AddText(text, nullptr, { r.Min.x + 2.0f, r.Min.y + 1.0f }, 11.0f, theme.GetToken("TextMuted", { 0.58f, 0.62f, 0.69f, 1.0f }));
         }
+    }
+
+    void UICurveEditor::HashState(UIStateHasher& h) const
+    {
+        UIElement::HashState(h);
+        h(RangeMode, AddOnDoubleClick, m_DraggingIndex, m_LastClickTime, m_Points);
+        HashPaintOutput(h, m_PaintMemo); // (the keys and the evaluated curve, from the callbacks)
     }
 }

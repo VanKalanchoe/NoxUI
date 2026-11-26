@@ -17,6 +17,7 @@ namespace NoxUI
 
     void UIDrawList::Clear(const glm::vec2& viewportSize)
     {
+        Touch();
         m_ViewportSize = glm::max(viewportSize, glm::vec2(1.0f));
         m_Primitives.clear();
         m_ClipRects.clear();
@@ -31,6 +32,7 @@ namespace NoxUI
 
     void UIDrawList::PushClipRect(const glm::vec2& min, const glm::vec2& max, const glm::vec4& cornerRadii)
     {
+        Touch();
         const UIClipRect& parent = m_ClipRects[CurrentClipIndex()];
         glm::vec2 clampedMin = glm::max(min, glm::vec2(parent.rect.x, parent.rect.y));
         glm::vec2 clampedMax = glm::min(max, glm::vec2(parent.rect.z, parent.rect.w));
@@ -47,6 +49,7 @@ namespace NoxUI
 
     void UIDrawList::PopClipRect()
     {
+        Touch();
         if (m_ClipStack.size() <= 1)
         {
             LogMessage(LogLevel::Warn, "UIDrawList::PopClipRect called with empty user clip stack");
@@ -59,6 +62,7 @@ namespace NoxUI
                                     const glm::vec4& cornerRadii, float borderThickness, const glm::vec4& borderColor,
                                     const glm::vec4& shadowColor, const glm::vec2& shadowOffset, float shadowBlur)
     {
+        Touch();
         if (max.x <= min.x || max.y <= min.y)
             return;
 
@@ -83,6 +87,7 @@ namespace NoxUI
                                             const glm::vec4& cornerRadii, float borderThickness, const glm::vec4& borderColor,
                                             const glm::vec4& shadowColor, const glm::vec2& shadowOffset, float shadowBlur)
     {
+        Touch();
         if (max.x <= min.x || max.y <= min.y)
             return;
 
@@ -106,6 +111,7 @@ namespace NoxUI
                                      const glm::vec2& uvMin, const glm::vec2& uvMax,
                                      const glm::vec4& tint, const glm::vec4& cornerRadii)
     {
+        Touch();
         if (max.x <= min.x || max.y <= min.y || textureId == kInvalidTextureID)
             return;
 
@@ -152,6 +158,7 @@ namespace NoxUI
     void UIDrawList::AddText(std::string_view text, const Ref<UIFont>& fontIn, const glm::vec2& topLeftPos,
                              float fontSizePx, const glm::vec4& color)
     {
+        Touch();
         if (text.empty() || fontSizePx <= 0.0f)
             return;
 
@@ -213,6 +220,22 @@ namespace NoxUI
             if (!glyph)
                 continue;
 
+            if (useGlyphCache && m_FingerprintOnly)
+            {
+                // (fingerprinting: the glyph as what decides its look -- codepoint, pen, size, colour -- without the glyph cache, which
+                // would rasterize it now and give later glyphs other places in the atlas than drawing would)
+                UIPrimitive prim{};
+                prim.bounds = glm::vec4(static_cast<float>(x), static_cast<float>(baselineY), fontSizePx, static_cast<float>(glyph->getCodepoint()));
+                prim.color0 = color;
+                prim.type = UI_PRIM_GLYPH_BITMAP;
+                prim.clipIndex = CurrentClipIndex();
+                m_Primitives.push_back(prim);
+                double advance = glyph->getAdvance();
+                if (i + 1 < text.size())
+                    msdf.PairAdvance(advance, c, text[i + 1]);
+                x += advance * scale;
+                continue;
+            }
             if (useGlyphCache && DrawCachedGlyph(glyphCache, *font, fontSizePx, glyph->getCodepoint(), x, baselineY, color))
             {
                 double advance = glyph->getAdvance();
@@ -256,6 +279,7 @@ namespace NoxUI
     void UIDrawList::AddBezier(const glm::vec2& p0, const glm::vec2& p1, const glm::vec2& p2, const glm::vec2& p3,
                                float thickness, const glm::vec4& color)
     {
+        Touch();
         if (thickness <= 0.0f || color.a <= 0.0f)
             return;
 

@@ -78,6 +78,12 @@ namespace NoxUI
         class UIColorCompare final : public UIElement
         {
         public:
+            void HashState(UIStateHasher& h) const override
+            {
+                UIElement::HashState(h);
+                h(Current, Original, ShowAlpha);
+            }
+            const std::type_info& StateHashClass() const override { return typeid(UIColorCompare); }
             UIColorCompare()
             {
                 HitTestMode = UIHitTestMode::Self;
@@ -119,6 +125,12 @@ namespace NoxUI
         class UIColorPickerPanel final : public UIStackBox
         {
         public:
+            void HashState(UIStateHasher& h) const override
+            {
+                UIStackBox::HashState(h);
+                h(m_ShowAlpha, m_Picker, m_Compare, m_Rgb[0], m_Rgb[1], m_Rgb[2], m_Rgb[3], m_Hsv[0], m_Hsv[1], m_Hsv[2], m_Hex);
+            }
+            const std::type_info& StateHashClass() const override { return typeid(UIColorPickerPanel); }
             UIColorPickerPanel(const UIColor& color, bool showAlpha, std::function<void(const UIColor&)> onChanged)
                 : UIStackBox(UIOrientation::Vertical, 8.0f), m_ShowAlpha(showAlpha), m_OnChanged(std::move(onChanged))
             {
@@ -760,5 +772,17 @@ namespace NoxUI
             self->SetColor(color, true);
         }));
         m_PickerOpen = UIPopup::Show(*context, m_SwatchRect, panel);
+    }
+
+    void UIColorPicker::HashState(UIStateHasher& h) const
+    {
+        UIElement::HashState(h);
+        h(ShowAlpha, m_Hue, m_Sat, m_Val, m_Alpha, m_Dragging);
+    }
+
+    void UIColorEdit::HashState(UIStateHasher& h) const
+    {
+        UIElement::HashState(h);
+        h(ShowAlpha, static_cast<const void*>(m_Context), m_Color, m_Fields[0], m_Fields[1], m_Fields[2], m_Fields[3], m_SwatchRect, IsPickerOpen());
     }
 }

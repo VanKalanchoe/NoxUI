@@ -87,7 +87,9 @@ int main(int argc, char** argv)
     int frames = 3000;
     uint32_t seed = 1;
     std::string recordPath, comparePath;
-    bool verify = false;
+    bool verify = false, incremental = true;
+    int dumpFrame = -1;
+    std::string dumpPath;
     for (int i = 1; i < argc; ++i)
     {
         if (!std::strcmp(argv[i], "--frames") && i + 1 < argc)
@@ -100,6 +102,13 @@ int main(int argc, char** argv)
             comparePath = argv[++i];
         else if (!std::strcmp(argv[i], "--verify"))
             verify = true;
+        else if (!std::strcmp(argv[i], "--no-incremental"))
+            incremental = false;
+        else if (!std::strcmp(argv[i], "--dump-frame") && i + 2 < argc)
+        {
+            dumpFrame = std::atoi(argv[++i]);
+            dumpPath = argv[++i];
+        }
     }
 
     const std::filesystem::path assets = FindAssets(argv[0]);
@@ -124,15 +133,8 @@ int main(int argc, char** argv)
     counter->OnSync = [counterPtr, &frameNumber]() { counterPtr->Text = "Frame " + std::to_string(frameNumber / 7); };
     telemetry->AddChild(counter);
     dock->AddPanel("Telemetry", telemetry, UIDockDropZone::Right, "NoxUI Component Gallery", 0.27f);
-#if defined(NOXUI_HAS_VERIFY_MODE)
     context.SetVerifyMode(verify);
-#else
-    if (verify)
-    {
-        std::fprintf(stderr, "[UIFrameReplay] this build has no verify mode\n");
-        return 2;
-    }
-#endif
+    context.SetIncremental(incremental);
 
     std::vector<uint64_t> reference;
     if (!comparePath.empty())
@@ -236,6 +238,16 @@ int main(int argc, char** argv)
 
         for (const UIPrimitive& prim : drawList.GetPrimitives())
             ++primitivesByType[prim.type < 8 ? prim.type : 7];
+        if (frameNumber == dumpFrame)
+        {
+            std::ofstream dump(dumpPath);
+            for (const UIClipRect& clip : drawList.GetClipRects())
+                dump << "clip " << clip.rect.x << ' ' << clip.rect.y << ' ' << clip.rect.z << ' ' << clip.rect.w << "\n";
+            for (const UIPrimitive& p : drawList.GetPrimitives())
+                dump << "prim t" << p.type << " c" << p.clipIndex << " b " << p.bounds.x << ' ' << p.bounds.y << ' ' << p.bounds.z << ' ' << p.bounds.w
+                     << " col " << p.color0.r << ' ' << p.color0.g << ' ' << p.color0.b << ' ' << p.color0.a << " uv " << p.uvOrP0P1.x << ' '
+                     << p.uvOrP0P1.y << ' ' << p.uvOrP0P1.z << ' ' << p.uvOrP0P1.w << " bc " << p.borderColor.a << " sh " << p.shadowColor.a << "\n";
+        }
         const uint64_t hash = HashDrawList(drawList);
         if (record.is_open())
             record << std::hex << hash << "\n";
@@ -250,6 +262,13 @@ int main(int argc, char** argv)
     std::printf("[UIFrameReplay] %d frames (seed %u): UpdateAndRender avg %.3f ms, worst %.3f ms; primitives drawn: %zu rects, %zu glyphs, "
                 "%zu MSDF glyphs, %zu curves, %zu images\n", frames, seed, totalMs / std::max(1, frames - 30), worstMs, primitivesByType[0],
                 primitivesByType[4], primitivesByType[2], primitivesByType[3], primitivesByType[1]);
+    std::printf("[UIFrameReplay] idle frames skipped: %llu of %d", static_cast<unsigned long long>(context.GetSkippedFrameCount()), frames);
+    if (verify)
+        std::printf("; verify: %llu idle frames drawn and compared, %llu differed", static_cast<unsigned long long>(context.GetVerifiedFrameCount()),
+                    static_cast<unsigned long long>(context.GetVerifyFailureCount()));
+    std::printf("\n");
+    if (verify && context.GetVerifyFailureCount() > 0)
+        return 1;
     if (!reference.empty())
     {
         if (static_cast<int>(reference.size()) != frames)

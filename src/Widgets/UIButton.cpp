@@ -119,4 +119,10 @@ namespace NoxUI
             m_AutoTooltip = false;
         }
     }
+
+    void UIButton::HashState(UIStateHasher& h) const
+    {
+        UIElement::HashState(h);
+        h(TextElide, m_Label, m_AutoTooltip);
+    }
 }

@@ -173,6 +173,7 @@ namespace NoxUI
 
     void UIGlyphCache::Reset()
     {
+        ++m_Generation;
         m_Glyphs.clear();
         m_ShelfY = m_ShelfHeight = m_CursorX = 0;
         m_Pending.clear();
@@ -181,6 +182,7 @@ namespace NoxUI
 
     void UIGlyphCache::Clear()
     {
+        ++m_Generation;
         Reset();
         m_Faces.clear();
         m_TextureId = kInvalidTextureID;

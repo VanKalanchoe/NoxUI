@@ -19,6 +19,7 @@ namespace NoxUI
     class UILevelMeter : public UIElement
     {
     public:
+        NOXUI_STATE_HASH(UILevelMeter)
         struct Values
         {
             float RmsLeft = 0.0f, RmsRight = 0.0f;
@@ -45,7 +46,7 @@ namespace NoxUI
 
     protected:
         UIVec2 ComputeDesiredSize() override;
-        void OnUpdate(float dt) override;
+        void OnPoll() override; // (Source and the tooltip, before the fingerprint)
         void OnPaint(UIDrawList& drawList, const UITheme& theme) override;
     };
 }

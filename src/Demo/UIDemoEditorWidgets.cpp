@@ -53,6 +53,12 @@ namespace NoxUI
         class DemoCanvas final : public UIElement
         {
         public:
+            void HashState(UIStateHasher& h) const override
+            {
+                UIElement::HashState(h);
+                h(m_View.Pan, m_View.Zoom, m_View.MinZoom, m_View.MaxZoom, m_Panning, m_Framed, m_Last);
+            }
+            const std::type_info& StateHashClass() const override { return typeid(DemoCanvas); }
             DemoCanvas()
             {
                 HitTestMode = UIHitTestMode::Self;
@@ -145,6 +151,11 @@ namespace NoxUI
         class DemoSwatch final : public UIElement
         {
         public:
+            void HashState(UIStateHasher& h) const override
+            {
+                UIElement::HashState(h);
+            }
+            const std::type_info& StateHashClass() const override { return typeid(DemoSwatch); }
             DemoSwatch()
             {
                 WidthMode = UISizeMode::Fixed;

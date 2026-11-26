@@ -76,6 +76,24 @@ const NoxUI_NoxRHIDrawData drawData = NoxUI_ImplNoxRHI_PrepareDrawData(drawList,
   checked against the old algorithm over 3.3 million texts / widths / sizes); a **wrapped label keeps its last wrap** while its text,
   width, font size and font stay the same (layout asks for a wrapped label's height several times a frame). The "Editor Widgets" demo tab
   went from 3.4 ms to 0.15 ms of `UpdateAndRender` per frame (Release; 44 ms to 1.1 ms in Debug); the other tabs take 0.02-0.04 ms.
+- **Idle frames are skipped (retained mode).** After the `OnSync` hooks, `UIContext::UpdateAndRender` fingerprints the UI: every visible
+  element's `HashState` (its fields, interaction state, animation state, values read through callbacks) plus the context's own state
+  (hover, focus, toasts, theme version, glyph cache, viewport). When no input came since the last frame, the fingerprint equals the one
+  the last frame began from, and the draw list is still the one it drew (`UIDrawList::GetRevision`), the frame would draw the same:
+  styles, layout and paint are skipped and the list keeps what it holds (`WasLastFrameSkipped()` -- a backend can skip its upload).
+  A skipped frame costs the syncs plus the fingerprint: 4-10 us on the gallery's static tabs, against 25-60 us drawn. Animated content
+  (a spinner, a blinking caret, a transition, a toast) keeps frames drawn while it moves.
+- **Custom widgets.** A class that adds state overrides `HashState` (call the base first, add every field its layout and paint read)
+  and `StateHashClass` (its own `typeid`) -- the `NOXUI_STATE_HASH(Class)` macro declares both. An element whose class does not
+  (a subclass with fields of its own) never lets a frame be skipped: nothing breaks, it just keeps the old cost. A widget that paints
+  from callbacks fingerprints its paint output (`HashPaintOutput`); one that polls outside data every frame does it in `OnPoll` (with
+  the syncs, before the fingerprint). A painter reading state outside the UI calls `UIContext::RequestRedraw()` when it changes.
+- **Verified.** `UIFrameReplay` (tests/) replays the gallery headless with seeded input -- tab switches, clicks, drags, wheel, keys,
+  typing, idle stretches, resizes, toasts -- and hashes each frame's draw list: `--record` / `--compare` check one build against
+  another frame by frame; `--verify` draws every frame that would be skipped and compares it with what was kept. Eight seeds
+  (24,000 frames) are identical to the build without these changes; CI runs `--verify` on three.
+- **Layout** remembers `HeightForWidth` answers during a layout pass (nested stacks asked each child twice per level: the Editor
+  Widgets tab's arrange went from 142 to 51 us), and **text drawing** reads kerning from a per-font table.
 - **UIDemo's telemetry** shows the frame time (one frame to the next: waiting for the GPU and the swapchain included) and, separately,
   `UI CPU` -- `UIContext::UpdateAndRender` alone. Measure in Release: Debug builds are ~10x slower and NoxRHI's validation adds more.
 

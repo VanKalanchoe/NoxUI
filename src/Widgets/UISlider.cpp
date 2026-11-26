@@ -368,4 +368,10 @@ namespace NoxUI
             }
         }
     }
+
+    void UISlider::HashState(UIStateHasher& h) const
+    {
+        UIElement::HashState(h);
+        h(Value, Min, Max, Step, ShowValue, Format, m_Dragging, m_Editing, m_SelectAll, m_EditText, m_Cursor, m_BlinkTimer, m_LastClickTicks);
+    }
 }

@@ -66,6 +66,8 @@ namespace NoxUI
         // The atlas ran out of room this frame: Reset once the frame's uploads are recorded (the glyphs drawn this frame keep their
         // texels until later uploads, which the GPU runs after this frame's draws, overwrite them).
         bool ResetRequested() const { return m_ResetRequested; }
+        // Changes when the atlas is emptied (Reset, Clear): glyphs drawn before have other places in it now.
+        uint64_t GetGeneration() const { return m_Generation; }
         void Reset();
         // Drops every face and glyph (the backend shut down, or fonts are being reloaded).
         void Clear();
@@ -83,6 +85,7 @@ namespace NoxUI
         uint32_t m_ShelfY = 0, m_ShelfHeight = 0, m_CursorX = 0;
         std::vector<Region> m_Pending;
         bool m_ResetRequested = false;
+        uint64_t m_Generation = 0;
         UITextureID m_TextureId = kInvalidTextureID;
     };
 }

@@ -10,6 +10,7 @@ namespace NoxUI
     class UIScrollView : public UIElement
     {
     public:
+        NOXUI_STATE_HASH(UIScrollView)
         UIScrollView();
 
         float ScrollOffsetY = 0.0f;

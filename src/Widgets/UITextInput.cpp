@@ -277,4 +277,10 @@ namespace NoxUI
 
         drawList.PopClipRect();
     }
+
+    void UITextInput::HashState(UIStateHasher& h) const
+    {
+        UIElement::HashState(h);
+        h(Text, Placeholder, ReadOnly, m_Cursor, m_SelectAll, m_WasFocusedOnPress, m_BlinkTimer, m_LastClickTicks);
+    }
 }

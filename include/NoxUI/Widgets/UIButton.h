@@ -12,6 +12,7 @@ namespace NoxUI
     class UIButton : public UIElement
     {
     public:
+        NOXUI_STATE_HASH(UIButton)
         explicit UIButton(std::string text = {}, std::function<void()> onClick = {});
         ~UIButton() override;
 

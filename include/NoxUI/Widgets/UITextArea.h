@@ -12,6 +12,7 @@ namespace NoxUI
     class UITextArea : public UIElement
     {
     public:
+        NOXUI_STATE_HASH(UITextArea)
         explicit UITextArea(std::string text = {}, std::string placeholder = {});
 
         std::string Text;

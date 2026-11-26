@@ -135,4 +135,10 @@ namespace NoxUI
             drawList.AddRoundedRect({ div.Min.x + 6.0f, cy - 1.0f }, { div.Max.x - 6.0f, cy + 1.0f }, color, glm::vec4(1.0f));
         }
     }
+
+    void UISplitter::HashState(UIStateHasher& h) const
+    {
+        UIElement::HashState(h);
+        h(Orientation, SplitRatio, DividerThickness, MinPaneSize, m_First, m_Second, m_Dragging, m_DividerHovered);
+    }
 }

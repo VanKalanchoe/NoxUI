@@ -14,6 +14,7 @@ namespace NoxUI
     class UIAccordion : public UIStackBox
     {
     public:
+        NOXUI_STATE_HASH(UIAccordion)
         explicit UIAccordion(bool allowMultipleOpen = false);
 
         void AddSection(std::string title, const Ref<UIElement>& content, bool expanded = false);

@@ -12,6 +12,7 @@ namespace NoxUI
     class UIRadioGroup : public UIStackBox
     {
     public:
+        NOXUI_STATE_HASH(UIRadioGroup)
         explicit UIRadioGroup(
             std::vector<std::string> items = {},
             int selectedIndex = 0,

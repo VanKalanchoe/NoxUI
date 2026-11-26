@@ -10,6 +10,7 @@ namespace NoxUI
     class UIStarRating : public UIElement
     {
     public:
+        NOXUI_STATE_HASH(UIStarRating)
         explicit UIStarRating(
             int maxRating = 5,
             int rating = 3,

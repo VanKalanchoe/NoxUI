@@ -126,4 +126,10 @@ namespace NoxUI
             glm::vec4(knobR)
         );
     }
+
+    void UIToggleSwitch::HashState(UIStateHasher& h) const
+    {
+        UIElement::HashState(h);
+        h(OnColor, m_Checked, m_AnimT, m_Label);
+    }
 }

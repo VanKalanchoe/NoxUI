@@ -59,4 +59,10 @@ namespace NoxUI
             { BadgeColor.r, BadgeColor.g, BadgeColor.b, 0.85f }
         );
     }
+
+    void UIBadge::HashState(UIStateHasher& h) const
+    {
+        UIElement::HashState(h);
+        h(BadgeColor, m_Label);
+    }
 }

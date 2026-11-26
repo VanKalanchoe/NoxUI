@@ -12,6 +12,12 @@ namespace NoxUI
         class UIPopupBackdrop final : public UIAnchorBox
         {
         public:
+            void HashState(UIStateHasher& h) const override
+            {
+                UIAnchorBox::HashState(h);
+                h(static_cast<const void*>(m_Context), m_Anchor, m_Content, m_AlignRight, m_Open != nullptr, m_Open && *m_Open);
+            }
+            const std::type_info& StateHashClass() const override { return typeid(UIPopupBackdrop); }
             UIPopupBackdrop(UIContext& context, const UIRect& anchor, const Ref<UIElement>& content, bool alignRight)
                 : m_Context(&context), m_Anchor(anchor), m_Content(content), m_AlignRight(alignRight), m_Open(std::make_shared<bool>(true))
             {

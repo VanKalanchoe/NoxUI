@@ -8,6 +8,7 @@ namespace NoxUI
     class UISeparator : public UIElement
     {
     public:
+        NOXUI_STATE_HASH(UISeparator)
         explicit UISeparator(UIOrientation orientation = UIOrientation::Horizontal, float thickness = 1.0f);
     };
 }

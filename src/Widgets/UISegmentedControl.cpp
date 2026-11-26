@@ -64,4 +64,10 @@ namespace NoxUI
             AddChild(btn);
         }
     }
+
+    void UISegmentedControl::HashState(UIStateHasher& h) const
+    {
+        UIStackBox::HashState(h);
+        h(m_Segments, m_SelectedIndex);
+    }
 }

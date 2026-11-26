@@ -96,4 +96,10 @@ namespace NoxUI
             );
         }
     }
+
+    void UIStarRating::HashState(UIStateHasher& h) const
+    {
+        UIElement::HashState(h);
+        h(m_MaxRating, m_Rating, m_HoveredIndex);
+    }
 }

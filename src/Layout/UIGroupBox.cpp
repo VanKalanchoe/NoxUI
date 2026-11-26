@@ -51,4 +51,10 @@ namespace NoxUI
         if (m_Content && child)
             m_Content->AddChild(child);
     }
+
+    void UIGroupBox::HashState(UIStateHasher& h) const
+    {
+        UIStackBox::HashState(h);
+        h(m_TitleLabel, m_Content);
+    }
 }

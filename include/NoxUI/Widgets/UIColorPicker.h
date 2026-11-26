@@ -17,6 +17,7 @@ namespace NoxUI
     class UIColorPicker : public UIElement
     {
     public:
+        NOXUI_STATE_HASH(UIColorPicker)
         explicit UIColorPicker(
             const UIColor& initialColor = { 0.24f, 0.56f, 0.96f, 1.0f },
             std::function<void(const UIColor&)> onColorChanged = {});
@@ -86,6 +87,7 @@ namespace NoxUI
     class UIColorEdit : public UIElement
     {
     public:
+        NOXUI_STATE_HASH(UIColorEdit)
         explicit UIColorEdit(
             UIContext* context = nullptr,
             const UIColor& initialColor = { 0.24f, 0.56f, 0.96f, 1.0f },

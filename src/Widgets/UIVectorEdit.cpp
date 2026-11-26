@@ -96,4 +96,10 @@ namespace NoxUI
         }
         return false;
     }
+
+    void UIVectorEdit::HashState(UIStateHasher& h) const
+    {
+        UIStackBox::HashState(h);
+        h(m_Components, m_Axes[0], m_Axes[1], m_Axes[2], m_Axes[3]);
+    }
 }

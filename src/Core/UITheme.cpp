@@ -539,6 +539,7 @@ namespace NoxUI
 
     bool UITheme::LoadFromFile(const std::filesystem::path& path)
     {
+        ++m_Version; // (even a failed load may have changed some styles before it stopped)
         std::ifstream stream(path);
         if (!stream.is_open())
         {
@@ -617,6 +618,7 @@ namespace NoxUI
 
     void UITheme::SetToken(const std::string& name, const UIColor& color)
     {
+        ++m_Version;
         m_Tokens[name] = color;
     }
 
@@ -629,6 +631,7 @@ namespace NoxUI
 
     void UITheme::SetStyle(const std::string& selector, const UIStyleBox& style)
     {
+        ++m_Version;
         m_Styles[selector] = style;
     }
 

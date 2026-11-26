@@ -279,4 +279,10 @@ namespace NoxUI
 
         drawList.PopClipRect();
     }
+
+    void UITextArea::HashState(UIStateHasher& h) const
+    {
+        UIElement::HashState(h);
+        h(Text, Placeholder, ShowLineNumbers, m_Cursor, m_ScrollY);
+    }
 }

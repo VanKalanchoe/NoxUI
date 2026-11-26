@@ -26,6 +26,7 @@ namespace NoxUI
     class UIMenuPopup : public UIStackBox
     {
     public:
+        NOXUI_STATE_HASH(UIMenuPopup)
         explicit UIMenuPopup(std::vector<UIMenuItem> items, UIContext* context = nullptr, UIElement* host = nullptr, int depth = 0);
 
         static void ShowContextMenu(UIContext& context, const UIVec2& screenPos, std::vector<UIMenuItem> items);
@@ -40,6 +41,7 @@ namespace NoxUI
     class UIMenuBar : public UIStackBox
     {
     public:
+        NOXUI_STATE_HASH(UIMenuBar)
         UIMenuBar();
 
         void AddMenu(const std::string& title, std::vector<UIMenuItem> items);

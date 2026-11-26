@@ -58,4 +58,10 @@ namespace NoxUI
     {
         return m_Scalar ? m_Scalar->Value : 0.0f;
     }
+
+    void UISpinBox::HashState(UIStateHasher& h) const
+    {
+        UIStackBox::HashState(h);
+        h(Step, MinValue, MaxValue, m_Scalar);
+    }
 }

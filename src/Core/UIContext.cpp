@@ -1,9 +1,13 @@
 #include "NoxUI/Core/UIContext.h"
 
 #include <algorithm>
+#include <cstring>
+#include <string>
 
+#include "NoxUI/Core/UILog.h"
 #include "NoxUI/Rendering/UIDrawList.h"
 #include "NoxUI/Rendering/UIFont.h"
+#include "NoxUI/Rendering/UIGlyphCache.h"
 #include "NoxUI/Rendering/UIIcons.h"
 #include "NoxUI/Widgets/UILabel.h"
 
@@ -41,6 +45,7 @@ namespace NoxUI
 
     void UIContext::SetRoot(const Ref<UIElement>& root)
     {
+        m_ChangedSinceFrame = true; // (input, or a change outside the fingerprint: the next frame is drawn)
         m_Root = root;
         m_Overlay = nullptr;
         m_Hovered = nullptr;
@@ -50,6 +55,7 @@ namespace NoxUI
 
     void UIContext::SetOverlay(const Ref<UIElement>& overlay)
     {
+        m_ChangedSinceFrame = true; // (input, or a change outside the fingerprint: the next frame is drawn)
         if (m_Overlay == overlay)
             return;
 
@@ -86,11 +92,13 @@ namespace NoxUI
 
     void UIContext::SetTheme(const Ref<UITheme>& theme)
     {
+        m_ChangedSinceFrame = true; // (input, or a change outside the fingerprint: the next frame is drawn)
         m_Theme = theme ? theme : UITheme::CreateDefault();
     }
 
     void UIContext::PushToast(std::string message, float durationSeconds, const UIColor& accentColor)
     {
+        m_ChangedSinceFrame = true; // (input, or a change outside the fingerprint: the next frame is drawn)
         if (message.empty())
             return;
         ToastItem item;
@@ -106,6 +114,7 @@ namespace NoxUI
 
     void UIContext::PushNotification(UINotification notification)
     {
+        m_ChangedSinceFrame = true; // (input, or a change outside the fingerprint: the next frame is drawn)
         if (notification.Title.empty() && notification.Message.empty())
             return;
         ToastItem item;
@@ -162,6 +171,7 @@ namespace NoxUI
 
     void UIContext::SetFocus(UIElement* element)
     {
+        m_ChangedSinceFrame = true; // (input, or a change outside the fingerprint: the next frame is drawn)
         Ref<UIElement> prev = m_Focused;
         if (prev.get() == element)
             return;
@@ -296,6 +306,7 @@ namespace NoxUI
 
     void UIContext::SetPointerCapture(const Ref<UIElement>& element)
     {
+        m_ChangedSinceFrame = true; // (input, or a change outside the fingerprint: the next frame is drawn)
         if (m_Captured && m_Captured != element)
             m_Captured->SetStateFlag(UIState::Pressed, false);
         m_Captured = element;
@@ -303,6 +314,7 @@ namespace NoxUI
 
     void UIContext::ReleasePointerCapture()
     {
+        m_ChangedSinceFrame = true; // (input, or a change outside the fingerprint: the next frame is drawn)
         if (m_Captured)
             m_Captured->SetStateFlag(UIState::Pressed, false);
         m_Captured = nullptr;
@@ -501,6 +513,7 @@ namespace NoxUI
 
     bool UIContext::OnPointerMove(const UIVec2& pos)
     {
+        m_ChangedSinceFrame = true; // (input, or a change outside the fingerprint: the next frame is drawn)
         ScopedCurrentContext currentGuard(s_Current, this);
         DropDetachedInput();
         return DispatchPointerMove(pos);
@@ -508,6 +521,7 @@ namespace NoxUI
 
     bool UIContext::OnPointerDown(const UIVec2& pos, int button)
     {
+        m_ChangedSinceFrame = true; // (input, or a change outside the fingerprint: the next frame is drawn)
         ScopedCurrentContext currentGuard(s_Current, this);
         DropDetachedInput();
         if (button > 0 && button < 32)
@@ -517,6 +531,7 @@ namespace NoxUI
 
     bool UIContext::OnPointerUp(const UIVec2& pos, int button)
     {
+        m_ChangedSinceFrame = true; // (input, or a change outside the fingerprint: the next frame is drawn)
         ScopedCurrentContext currentGuard(s_Current, this);
         DropDetachedInput();
         if (button > 0 && button < 32)
@@ -526,6 +541,7 @@ namespace NoxUI
 
     bool UIContext::OnScroll(const UIVec2& scrollDelta)
     {
+        m_ChangedSinceFrame = true; // (input, or a change outside the fingerprint: the next frame is drawn)
         ScopedCurrentContext currentGuard(s_Current, this);
         DropDetachedInput();
         return DispatchScroll(scrollDelta);
@@ -533,6 +549,7 @@ namespace NoxUI
 
     bool UIContext::OnKeyDown(int keyCode, uint16_t mods, bool repeat)
     {
+        m_ChangedSinceFrame = true; // (input, or a change outside the fingerprint: the next frame is drawn)
         ScopedCurrentContext currentGuard(s_Current, this);
         DropDetachedInput();
         return DispatchKeyDown(keyCode, mods, repeat);
@@ -540,6 +557,7 @@ namespace NoxUI
 
     bool UIContext::OnTextInput(std::string_view text)
     {
+        m_ChangedSinceFrame = true; // (input, or a change outside the fingerprint: the next frame is drawn)
         ScopedCurrentContext currentGuard(s_Current, this);
         DropDetachedInput();
         return DispatchTextInput(text);
@@ -549,15 +567,17 @@ namespace NoxUI
     {
         ScopedCurrentContext currentGuard(s_Current, this);
         s_LastDrawn = this;
-        if (m_Theme)
-            m_Theme->PollHotReload();
+        bool changed = m_ChangedSinceFrame;
+        m_ChangedSinceFrame = false;
+        if (m_Theme && m_Theme->PollHotReload())
+            changed = true;
 
-        drawList.Clear(viewportSize);
         m_ViewportSize = viewportSize;
 
         // What callbacks put off to this frame (they may rebuild what called them), then every element's sync.
         if (!m_Deferred.empty())
         {
+            changed = true;
             std::vector<std::function<void()>> deferred = std::move(m_Deferred);
             m_Deferred.clear();
             for (std::function<void()>& action : deferred)
@@ -565,10 +585,42 @@ namespace NoxUI
                     action();
         }
         if (!m_Root || !m_Theme)
+        {
+            drawList.Clear(viewportSize);
+            m_LastFrameStationary = false;
+            m_LastFrameSkipped = false;
             return;
+        }
         m_Root->SyncRecursive();
         if (m_Overlay)
             m_Overlay->SyncRecursive();
+
+        // An idle frame: nothing came in, the last frame changed nothing, the fingerprint is the one it left and `drawList` still
+        // holds what it drew -- the frame would draw the same, so it is not drawn (SetIncremental). Verify mode draws it and compares.
+        const bool track = m_Incremental || m_VerifyMode;
+        bool complete = false;
+        const uint64_t before = track ? HashFrame(viewportSize, complete) : 0;
+        // (the last frame -- drawn in full, or itself idle -- began from this same fingerprint: a full frame and the syncs after it
+        // came back to the state they started from, a fixed point; drawing it again would draw the same and change nothing)
+        const bool idle = track && complete && !changed && m_LastFrameStationary && before == m_LastStateHash &&
+                          &drawList == m_LastOutputList && drawList.GetRevision() == m_LastOutputRevision;
+        m_LastStateHash = before;
+        m_LastFrameStationary = track && complete;
+        m_LastFrameSkipped = false;
+        UIDrawList verifyCopy;
+        bool verifying = false;
+        if (idle && !m_VerifyMode)
+        {
+            m_LastFrameSkipped = true;
+            ++m_SkippedFrames;
+            return;
+        }
+        if (idle)
+        {
+            verifyCopy = drawList;
+            verifying = true;
+        }
+        drawList.Clear(viewportSize);
 
         m_Root->UpdateStylesRecursive(*m_Theme, dt);
         if (m_Overlay)
@@ -682,6 +734,59 @@ namespace NoxUI
         }
 
         PaintToasts(drawList, viewportSize, dt);
+
+        m_LastOutputList = &drawList;
+        m_LastOutputRevision = drawList.GetRevision();
+
+        if (verifying)
+        {
+            ++m_VerifiedFrames;
+            const auto& prims = drawList.GetPrimitives();
+            const auto& clips = drawList.GetClipRects();
+            const auto& keptPrims = verifyCopy.GetPrimitives();
+            const auto& keptClips = verifyCopy.GetClipRects();
+            const bool sameList = prims.size() == keptPrims.size() && clips.size() == keptClips.size() &&
+                                  drawList.GetViewportSize() == verifyCopy.GetViewportSize() &&
+                                  (prims.empty() || std::memcmp(prims.data(), keptPrims.data(), prims.size() * sizeof(UIPrimitive)) == 0) &&
+                                  (clips.empty() || std::memcmp(clips.data(), keptClips.data(), clips.size() * sizeof(UIClipRect)) == 0);
+            bool completeAfter = false;
+            const bool sameState = HashFrame(viewportSize, completeAfter) == before;
+            if (!sameList || !sameState)
+            {
+                ++m_VerifyFailures;
+                size_t firstDiff = 0;
+                while (firstDiff < std::min(prims.size(), keptPrims.size()) &&
+                       std::memcmp(&prims[firstDiff], &keptPrims[firstDiff], sizeof(UIPrimitive)) == 0)
+                    ++firstDiff;
+                LogMessage(LogLevel::Error, "UIContext verify: an idle frame drew differently (" + std::to_string(prims.size()) + " primitives, kept " +
+                                                std::to_string(keptPrims.size()) + ", first difference at " + std::to_string(firstDiff) +
+                                                (!sameState ? "; the fingerprint changed during the frame" : "") + ")");
+            }
+        }
+    }
+
+    uint64_t UIContext::HashFrame(const UIVec2& viewportSize, bool& complete) const
+    {
+        UIStateHasher h;
+        const UIGlyphCache& glyphs = UIGlyphCache::Get();
+        const Ref<UIFont> defaultFont = UIFont::GetDefault();
+        h(viewportSize, static_cast<const void*>(m_Theme.get()), m_Theme ? m_Theme->GetVersion() : 0ull, glyphs.GetGeneration(),
+          glyphs.ResetRequested(), static_cast<uint64_t>(glyphs.GetTextureID()), static_cast<const void*>(defaultFont.get()),
+          defaultFont ? static_cast<uint64_t>(defaultFont->GetAtlasTextureID()) : 0ull);
+        h(static_cast<const void*>(m_Hovered.get()), static_cast<const void*>(m_Captured.get()), static_cast<const void*>(m_Focused.get()),
+          m_LastMousePos, m_Modifiers, s_Modifiers, s_ButtonsHeld, std::min(m_HoverTime, 0.45f), m_DragPending, m_DragActive, m_DragOrigin,
+          m_ActivePayload.Type, m_ActivePayload.Text, m_ActivePayload.UserId, m_ActivePayload.Ids, m_ToastBottomInset);
+        h.Add(m_Toasts.size());
+        for (const ToastItem& toast : m_Toasts)
+            h(toast.Note.Severity, toast.Note.Title, toast.Note.Message, toast.Note.DurationSeconds, toast.Remaining, toast.Age, toast.HasAccent,
+              toast.Accent, toast.Bounds);
+        h(static_cast<const void*>(m_Root.get()), static_cast<const void*>(m_Overlay.get()));
+        if (m_Root)
+            m_Root->HashTree(h);
+        if (m_Overlay)
+            m_Overlay->HashTree(h);
+        complete = h.Complete;
+        return h.Value();
     }
 
     void UIContext::PaintToasts(UIDrawList& drawList, const UIVec2& viewportSize, float dt)

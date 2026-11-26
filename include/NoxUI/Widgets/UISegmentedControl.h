@@ -12,6 +12,7 @@ namespace NoxUI
     class UISegmentedControl : public UIStackBox
     {
     public:
+        NOXUI_STATE_HASH(UISegmentedControl)
         explicit UISegmentedControl(
             std::vector<std::string> segments = {},
             int selectedIndex = 0,

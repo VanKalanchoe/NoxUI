@@ -10,6 +10,7 @@ namespace NoxUI
     class UITextInput : public UIElement
     {
     public:
+        NOXUI_STATE_HASH(UITextInput)
         explicit UITextInput(std::string text = {}, std::string placeholder = {});
 
         std::string Text;

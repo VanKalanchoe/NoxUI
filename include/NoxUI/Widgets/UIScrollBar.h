@@ -1,5 +1,7 @@
 #pragma once
 
+#include "NoxUI/Core/UIStateHash.h"
+
 #include <algorithm>
 
 #include "NoxUI/Core/UITheme.h"
@@ -21,6 +23,9 @@ namespace NoxUI
     {
     public:
         static constexpr float kLaneWidth = 12.0f;
+
+        // Its state (geometry, drag, hover and activity fades) for the owner's UIElement::HashState.
+        void Hash(UIStateHasher& h) const { h(m_View, m_Content, m_Viewport, m_Dragging, m_GrabOffset, m_Hover, m_Activity); }
 
         // Every layout: the lane is the right edge of `viewRect`, the thumb's length follows viewportSize / contentSize.
         void SetGeometry(const UIRect& viewRect, float contentSize, float viewportSize);

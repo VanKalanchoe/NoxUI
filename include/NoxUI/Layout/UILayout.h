@@ -14,6 +14,7 @@ namespace NoxUI
     class UIStackBox : public UIElement
     {
     public:
+        NOXUI_STATE_HASH(UIStackBox)
         explicit UIStackBox(UIOrientation orientation = UIOrientation::Vertical, float spacing = 6.0f);
 
         UIOrientation Orientation = UIOrientation::Vertical;
@@ -30,6 +31,7 @@ namespace NoxUI
     class UIAnchorBox : public UIElement
     {
     public:
+        NOXUI_STATE_HASH(UIAnchorBox)
         UIAnchorBox() = default;
 
     protected:
@@ -41,6 +43,7 @@ namespace NoxUI
     class UIGridBox : public UIElement
     {
     public:
+        NOXUI_STATE_HASH(UIGridBox)
         explicit UIGridBox(uint32_t columns = 2, float colSpacing = 6.0f, float rowSpacing = 6.0f);
 
         uint32_t Columns = 2;

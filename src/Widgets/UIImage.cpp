@@ -78,4 +78,10 @@ namespace NoxUI
             );
         }
     }
+
+    void UIImage::HashState(UIStateHasher& h) const
+    {
+        UIElement::HashState(h);
+        h(TextureId, UVMin, UVMax, Tint, CornerRadius, AspectRatio, m_Desired);
+    }
 }

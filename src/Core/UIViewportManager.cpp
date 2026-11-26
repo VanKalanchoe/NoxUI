@@ -15,6 +15,12 @@ namespace NoxUI
         class UIViewportChrome final : public UIElement
         {
         public:
+            void HashState(UIStateHasher& h) const override
+            {
+                UIElement::HashState(h);
+                h(m_TitleBarHeight, static_cast<const void*>(&m_Manager), static_cast<const void*>(&m_Viewport), m_TitleLabel, m_CloseBtn, m_ContentHost);
+            }
+            const std::type_info& StateHashClass() const override { return typeid(UIViewportChrome); }
             UIViewportChrome(
                 UIViewportManager& manager,
                 UIViewport& viewport,

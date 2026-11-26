@@ -21,6 +21,7 @@ namespace NoxUI
     class UIRadialMenu : public UIElement
     {
     public:
+        NOXUI_STATE_HASH(UIRadialMenu)
         UIRadialMenu(UIContext& context, const UIVec2& centerPos, std::vector<UIRadialMenuItem> items);
 
         static void Open(UIContext& context, const UIVec2& centerPos, std::vector<UIRadialMenuItem> items);

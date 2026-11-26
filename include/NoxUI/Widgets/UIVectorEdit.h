@@ -14,6 +14,7 @@ namespace NoxUI
     class UIVectorEdit : public UIStackBox
     {
     public:
+        NOXUI_STATE_HASH(UIVectorEdit)
         explicit UIVectorEdit(
             int components = 3,
             const glm::vec4& initialValue = glm::vec4(0.0f),

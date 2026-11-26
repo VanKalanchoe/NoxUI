@@ -112,4 +112,12 @@ namespace NoxUI
         if (DrawIcon)
             DrawIcon(drawList, b, IconColor(theme));
     }
+
+    void UIIconButton::HashState(UIStateHasher& h) const
+    {
+        UIElement::HashState(h);
+        h(Texture, Active, Toggle, ActiveStyle, CornerRadius, static_cast<bool>(DrawIcon));
+        if (DrawIcon)
+            HashPaintOutput(h, m_PaintMemo); // (what the icon painter draws)
+    }
 }

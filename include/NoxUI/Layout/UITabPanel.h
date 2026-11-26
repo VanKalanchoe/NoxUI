@@ -15,6 +15,7 @@ namespace NoxUI
     class UITabPanel : public UIStackBox
     {
     public:
+        NOXUI_STATE_HASH(UITabPanel)
         UITabPanel();
 
         size_t AddTab(const std::string& title, const Ref<UIElement>& content);

@@ -25,6 +25,18 @@ namespace NoxUI
         class UIDockSplitterElement final : public UIElement
         {
         public:
+
+            void HashState(UIStateHasher& h) const override
+
+            {
+
+                UIElement::HashState(h);
+
+                h(static_cast<const void*>(&m_Owner)); // (painted from the dock space's state: its own HashState)
+
+            }
+
+            const std::type_info& StateHashClass() const override { return typeid(UIDockSplitterElement); }
             explicit UIDockSplitterElement(const UIDockSpace& owner) : m_Owner(owner)
             {
                 HitTestMode = UIHitTestMode::None;
@@ -44,6 +56,18 @@ namespace NoxUI
         class UIDockOverlayElement final : public UIElement
         {
         public:
+
+            void HashState(UIStateHasher& h) const override
+
+            {
+
+                UIElement::HashState(h);
+
+                h(static_cast<const void*>(&m_Owner)); // (painted from the dock space's state: its own HashState)
+
+            }
+
+            const std::type_info& StateHashClass() const override { return typeid(UIDockOverlayElement); }
             explicit UIDockOverlayElement(const UIDockSpace& owner) : m_Owner(owner)
             {
                 HitTestMode = UIHitTestMode::None;
@@ -1386,5 +1410,41 @@ namespace NoxUI
     void UIDockSpace::OnPaint(UIDrawList& drawList, const UITheme& theme)
     {
         UIElement::OnPaint(drawList, theme);
+    }
+
+    void UIDockSpace::HashState(UIStateHasher& h) const
+    {
+        UIElement::HashState(h);
+        h(m_RootNode, m_DockHost, m_SplitterHost, m_FloatHost, m_OverlayHost, m_FloatingWindows, m_ActiveDragTitle, m_ActiveDragDesiredSize,
+          static_cast<const void*>(m_DraggingSplitter), static_cast<const void*>(m_HoveredSplitter), m_ExternalDragActive, m_HoverDropZone,
+          m_HoverTargetNode, m_HoverPreviewRect, m_HoverIsTabBarDrop, m_HoverInsertTabIndex, m_HoverTabInsertX, static_cast<const void*>(m_Context),
+          static_cast<const void*>(m_ViewportManager));
+        uint64_t flags = 0, sizes = 0; // (order-independent: the maps' iteration order is not their content)
+        for (const auto& [title, flag] : m_PanelFlags)
+        {
+            UIStateHasher entry;
+            entry(title, flag);
+            flags += entry.Value();
+        }
+        for (const auto& [title, size] : m_PreferredPanelSizes)
+        {
+            UIStateHasher entry;
+            entry(title, size);
+            sizes += entry.Value();
+        }
+        h(m_PanelFlags.size(), flags, m_PreferredPanelSizes.size(), sizes);
+        // The dock tree (the splitters and drop previews are painted from it).
+        std::vector<const UIDockNode*> stack{ m_RootNode.get() };
+        while (!stack.empty())
+        {
+            const UIDockNode* node = stack.back();
+            stack.pop_back();
+            h(static_cast<const void*>(node));
+            if (!node)
+                continue;
+            h(node->SplitDir, node->Flags, node->SplitRatio, node->Bounds, node->SplitterRect, node->TabPanel);
+            stack.push_back(node->First.get());
+            stack.push_back(node->Second.get());
+        }
     }
 }

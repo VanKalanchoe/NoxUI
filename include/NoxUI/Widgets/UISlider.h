@@ -11,6 +11,7 @@ namespace NoxUI
     class UISlider : public UIElement
     {
     public:
+        NOXUI_STATE_HASH(UISlider)
         explicit UISlider(float value = 0.0f, float min = 0.0f, float max = 1.0f,
                           std::function<void(float)> onChanged = {});
 

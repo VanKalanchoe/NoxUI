@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "NoxUI/Core/UIElement.h"
+#include "NoxUI/Rendering/UIDrawList.h"
 
 namespace NoxUI
 {
@@ -22,6 +23,7 @@ namespace NoxUI
     class UICurveEditor : public UIElement
     {
     public:
+        NOXUI_STATE_HASH(UICurveEditor)
         enum class Range : uint8_t { Unit, FitKeys };
 
         explicit UICurveEditor(std::vector<UIVec2> points = { { 0.0f, 0.1f }, { 0.35f, 0.85f }, { 0.7f, 0.45f }, { 1.0f, 0.95f } });
@@ -50,7 +52,6 @@ namespace NoxUI
 
     protected:
         UIVec2 ComputeDesiredSize() override;
-        void OnUpdate(float dt) override;
         void OnPaint(UIDrawList& drawList, const UITheme& theme) override;
 
     private:
@@ -67,6 +68,6 @@ namespace NoxUI
         int m_DraggingIndex = -1;
         UIVec2 m_Low{ 0.0f }, m_High{ 1.0f };
         double m_LastClickTime = -1.0;
-        double m_Time = 0.0;
+        mutable UIPaintMemo m_PaintMemo; // (HashPaintOutput: what it painted last for the fingerprint)
     };
 }

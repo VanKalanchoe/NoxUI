@@ -11,6 +11,7 @@ namespace NoxUI
     class UITimeline : public UIElement
     {
     public:
+        NOXUI_STATE_HASH(UITimeline)
         explicit UITimeline(float duration = 5.0f, float currentTime = 0.0f);
 
         void SetDuration(float duration);

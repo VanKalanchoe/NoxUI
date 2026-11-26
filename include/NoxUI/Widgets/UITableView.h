@@ -28,6 +28,7 @@ namespace NoxUI
     class UITableView : public UIElement
     {
     public:
+        NOXUI_STATE_HASH(UITableView)
         UITableView();
 
         void SetColumns(std::vector<UITableColumn> columns);
@@ -63,6 +64,7 @@ namespace NoxUI
         int m_SortColumn = -1;
         bool m_SortAscending = true;
         float m_ScrollOffset = 0.0f;
+        uint64_t m_DataVersion = 0; // (++ when columns or rows change: SetColumns, SetRows, SortByColumn)
         UIScrollBar m_ScrollBar;
     };
 }

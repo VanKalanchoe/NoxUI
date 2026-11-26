@@ -50,6 +50,15 @@ namespace NoxUI
 
     // Collects resolution-independent 2D SDF UI primitives for one viewport frame.
     // Coordinates are in output pixels with origin at top-left (x right, y down).
+    // What an element painted last for its fingerprint (UIElement::HashPaintOutput): compared with what it paints now, and a version
+    // that changes when they differ -- comparing is exact, and cheaper than hashing every primitive every frame.
+    struct UIPaintMemo
+    {
+        std::vector<UIPrimitive> Primitives;
+        std::vector<UIClipRect> ClipRects;
+        uint64_t Version = 0;
+    };
+
     class UIDrawList
     {
     public:
@@ -89,8 +98,15 @@ namespace NoxUI
         const std::vector<UIClipRect>& GetClipRects() const { return m_ClipRects; }
         const glm::vec2& GetViewportSize() const { return m_ViewportSize; }
         bool IsEmpty() const { return m_Primitives.empty(); }
+        // Changes with every change to the list (a copy keeps it: the same revision, the same content). UIContext leaves a list it
+        // drew untouched on an idle frame only when its revision is still the one it left; a backend can skip an upload the same way.
+        uint64_t GetRevision() const { return m_Revision; }
+        // A list painted only to fingerprint what would be drawn (UIElement::HashPaintOutput): text records its glyphs (codepoint,
+        // pen, size, colour) without asking the glyph cache, which must not rasterize or place glyphs for a list nobody draws.
+        void SetFingerprintOnly(bool enabled) { m_FingerprintOnly = enabled; }
 
     private:
+        void Touch() { m_Revision = ++s_RevisionCounter; }
         uint32_t CurrentClipIndex() const { return m_ClipStack.empty() ? 0u : m_ClipStack.back(); }
         // One glyph from the glyph cache at the pen (snapped to the pixel grid); false: draw it from the distance field.
         bool DrawCachedGlyph(UIGlyphCache& cache, const UIFont& font, float fontSizePx, uint32_t codepoint, double penX, double baselineY,
@@ -100,5 +116,8 @@ namespace NoxUI
         std::vector<UIClipRect> m_ClipRects;
         std::vector<uint32_t> m_ClipStack;
         glm::vec2 m_ViewportSize{ 1.0f, 1.0f };
+        uint64_t m_Revision = 0;
+        bool m_FingerprintOnly = false;
+        inline static uint64_t s_RevisionCounter = 0;
     };
 }

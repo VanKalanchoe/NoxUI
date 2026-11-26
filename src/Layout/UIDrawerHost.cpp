@@ -17,6 +17,12 @@ namespace NoxUI
         class UIDrawerGrip final : public UIElement
         {
         public:
+            void HashState(UIStateHasher& h) const override
+            {
+                UIElement::HashState(h);
+                h(m_Dragging, m_Hovered, m_LastY);
+            }
+            const std::type_info& StateHashClass() const override { return typeid(UIDrawerGrip); }
             explicit UIDrawerGrip(std::function<void(float dy)> onDrag) : m_OnDrag(std::move(onDrag))
             {
                 HitTestMode = UIHitTestMode::Self;
@@ -76,6 +82,11 @@ namespace NoxUI
         class UIDrawerFrame final : public UIStackBox
         {
         public:
+            void HashState(UIStateHasher& h) const override
+            {
+                UIStackBox::HashState(h);
+            }
+            const std::type_info& StateHashClass() const override { return typeid(UIDrawerFrame); }
             UIDrawerFrame() : UIStackBox(UIOrientation::Vertical, 0.0f)
             {
                 WidthMode = UISizeMode::Fill;
@@ -172,5 +183,11 @@ namespace NoxUI
         const float eased = 1.0f - (1.0f - Openness) * (1.0f - Openness);
         const float height = std::floor(rect.Height() * std::clamp(HeightFraction, MinFraction, MaxFraction) * eased);
         m_Frame->Arrange({ { rect.Min.x, rect.Max.y - height }, { rect.Max.x, rect.Max.y } });
+    }
+
+    void UIDrawerHost::HashState(UIStateHasher& h) const
+    {
+        UIElement::HashState(h);
+        h(Open, HeightFraction, MinFraction, MaxFraction, Openness, SlideTimeConstant, m_Content, m_Frame, m_PageHost);
     }
 }

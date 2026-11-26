@@ -77,4 +77,10 @@ namespace NoxUI
         out += (name && name[0] != '\0') ? name : "Key";
         return out;
     }
+
+    void UIKeybindButton::HashState(UIStateHasher& h) const
+    {
+        UIButton::HashState(h);
+        h(m_KeyCode, m_Mods, m_Listening);
+    }
 }

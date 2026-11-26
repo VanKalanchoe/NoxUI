@@ -23,12 +23,14 @@ namespace NoxUI
     void UITableView::SetColumns(std::vector<UITableColumn> columns)
     {
         m_Columns = std::move(columns);
+        ++m_DataVersion;
         m_SortColumn = -1;
     }
 
     void UITableView::SetRows(std::vector<UITableRow> rows)
     {
         m_Rows = std::move(rows);
+        ++m_DataVersion;
         m_HoveredRow = -1;
         if (m_SortColumn >= 0)
             SortByColumn(m_SortColumn);
@@ -69,6 +71,7 @@ namespace NoxUI
 
     void UITableView::SortByColumn(int colIndex)
     {
+        ++m_DataVersion;
         if (colIndex < 0 || colIndex >= static_cast<int>(m_Columns.size()))
             return;
 
@@ -299,5 +302,12 @@ namespace NoxUI
 
         drawList.PopClipRect();
         m_ScrollBar.Paint(drawList, theme, m_ScrollOffset);
+    }
+
+    void UITableView::HashState(UIStateHasher& h) const
+    {
+        UIElement::HashState(h);
+        h(HeaderHeight, RowHeight, m_DataVersion, m_SelectedId, m_HoveredRow, m_SortColumn, m_SortAscending, m_ScrollOffset);
+        m_ScrollBar.Hash(h);
     }
 }

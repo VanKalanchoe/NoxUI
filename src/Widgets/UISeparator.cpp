@@ -23,4 +23,9 @@ namespace NoxUI
             Margin = UIThickness::Symmetric(4.0f, 0.0f);
         }
     }
+
+    void UISeparator::HashState(UIStateHasher& h) const
+    {
+        UIElement::HashState(h);
+    }
 }

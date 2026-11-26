@@ -72,4 +72,10 @@ namespace NoxUI
         if (m_ClearBtn && m_Input)
             m_ClearBtn->Visible = !m_Input->Text.empty();
     }
+
+    void UISearchBar::HashState(UIStateHasher& h) const
+    {
+        UIStackBox::HashState(h);
+        h(m_Input, m_CountBadge, m_ClearBtn);
+    }
 }

@@ -77,6 +77,7 @@ namespace NoxUI
     class UIDockSpace : public UIElement
     {
     public:
+        NOXUI_STATE_HASH(UIDockSpace)
         UIDockSpace();
 
         // Dock a panel relative to an existing panel title (or root if targetTitle is empty / not found).

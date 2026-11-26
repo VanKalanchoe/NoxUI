@@ -27,9 +27,8 @@ namespace NoxUI
         ClearChildren();
     }
 
-    void UIPropertyGrid::OnUpdate(float dt)
+    void UIPropertyGrid::OnPoll()
     {
-        UIScrollView::OnUpdate(dt);
 
         for (size_t i = 0; i < m_SyncEntries.size();)
         {
@@ -392,5 +391,13 @@ namespace NoxUI
         Ref<UITextInput> input(new UITextInput(value, placeholder));
         input->OnChanged = std::move(onChanged);
         AddRow(label, input, section);
+    }
+
+    void UIPropertyGrid::HashState(UIStateHasher& h) const
+    {
+        UIScrollView::HashState(h);
+        h(LabelRatio, m_SyncEntries.size());
+        for (const SyncEntry& entry : m_SyncEntries)
+            h(entry.SectionContainer);
     }
 }

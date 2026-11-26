@@ -503,4 +503,11 @@ namespace NoxUI
 
         drawList.PopClipRect();
     }
+
+    void UIDragScalar::HashState(UIStateHasher& h) const
+    {
+        UIElement::HashState(h);
+        h(Value, Speed, Min, Max, Step, ShowFill, FontSize, Stripe, Prefix, PrefixColor, Format, TrimZeros);
+        h(m_Pressed, m_Scrubbing, m_PressX, m_ScrubValue, m_Editing, m_SelectAll, m_EditText, m_Cursor, m_BlinkTimer);
+    }
 }

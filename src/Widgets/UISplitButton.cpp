@@ -27,4 +27,9 @@ namespace NoxUI
         AddChild(mainBtn);
         AddChild(dropBtn);
     }
+
+    void UISplitButton::HashState(UIStateHasher& h) const
+    {
+        UIStackBox::HashState(h);
+    }
 }

@@ -66,4 +66,13 @@ namespace NoxUI
                 s.Content->Visible = s.Expanded;
         }
     }
+
+    void UIAccordion::HashState(UIStateHasher& h) const
+    {
+        UIStackBox::HashState(h);
+        h(AllowMultipleOpen);
+        h.Add(m_Sections.size());
+        for (const Section& section : m_Sections)
+            h(section.Title, section.HeaderBtn, section.Content, section.Expanded);
+    }
 }

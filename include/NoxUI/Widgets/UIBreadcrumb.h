@@ -12,6 +12,7 @@ namespace NoxUI
     class UIBreadcrumb : public UIWrapBox
     {
     public:
+        NOXUI_STATE_HASH(UIBreadcrumb)
         explicit UIBreadcrumb(
             std::vector<std::string> segments = {},
             std::function<void(int)> onNavigate = {});

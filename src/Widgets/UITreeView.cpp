@@ -713,4 +713,30 @@ namespace NoxUI
 
         drawList.PopClipRect();
     }
+
+    void UITreeView::HashState(UIStateHasher& h) const
+    {
+        UIElement::HashState(h);
+        h(RowHeight, IndentWidth, TopPadding, ScrollSpeed, ShowTagDots, EmptyText, m_PrimarySelectedId, m_HoveredRow, m_HoveredEyeRow, m_ScrollY,
+          m_PendingSingleSelectId, m_LastClickId, m_LastClickMs, m_RenameId, m_RenameInput);
+        uint64_t selected = 0; // (order-independent: the set's iteration order is not its content)
+        for (const uint64_t id : m_SelectedIds)
+            selected += id * 0x9E3779B97F4A7C15ull + (id >> 7);
+        h(m_SelectedIds.size(), selected);
+        m_ScrollBar.Hash(h);
+        // The rows paint reads, live through their node pointers (GetNodes hands the nodes out to change): the row count and the rows in
+        // view, by the same range as OnPaint.
+        h.Add(m_FlatRows.size());
+        const float viewHeight = GetBounds().Height();
+        const int firstRow = std::max(0, static_cast<int>(std::floor((m_ScrollY - TopPadding) / RowHeight)));
+        const int lastRow = std::min(static_cast<int>(m_FlatRows.size()), static_cast<int>(std::ceil((m_ScrollY - TopPadding + viewHeight) / RowHeight)) + 1);
+        for (int i = firstRow; i < lastRow; ++i)
+        {
+            const FlatRow& row = m_FlatRows[static_cast<size_t>(i)];
+            h(static_cast<const void*>(row.Node), row.Depth);
+            if (const UITreeNode* node = row.Node)
+                h(node->Id, node->Label, node->Expanded, node->TagColor, node->Children.size(), node->Badge, node->IsFolder, node->HasVisibilityToggle,
+                  node->IsVisible, node->IsVisibleInHierarchy, node->IsDimmed, node->Draggable, node->LabelColor);
+        }
+    }
 }

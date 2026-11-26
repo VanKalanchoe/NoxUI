@@ -10,6 +10,7 @@ namespace NoxUI
     class UIRangeSlider : public UIElement
     {
     public:
+        NOXUI_STATE_HASH(UIRangeSlider)
         explicit UIRangeSlider(
             float lowValue = 0.2f,
             float highValue = 0.8f,

@@ -130,4 +130,13 @@ namespace NoxUI
             );
         }
     }
+
+    void UIRadialMenu::HashState(UIStateHasher& h) const
+    {
+        UIElement::HashState(h);
+        h(Radius, static_cast<const void*>(&m_Context), m_Center, m_HoveredIndex);
+        h.Add(m_Items.size());
+        for (const UIRadialMenuItem& item : m_Items)
+            h(item.Label, item.AccentColor);
+    }
 }

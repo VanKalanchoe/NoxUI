@@ -48,4 +48,10 @@ namespace NoxUI
         if (m_Badge)
             m_Badge->SetText(text);
     }
+
+    void UIStatCard::HashState(UIStateHasher& h) const
+    {
+        UIStackBox::HashState(h);
+        h(m_TitleLabel, m_ValueLabel, m_Badge);
+    }
 }

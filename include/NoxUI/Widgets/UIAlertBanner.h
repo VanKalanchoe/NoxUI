@@ -20,6 +20,7 @@ namespace NoxUI
     class UIAlertBanner : public UIStackBox
     {
     public:
+        NOXUI_STATE_HASH(UIAlertBanner)
         UIAlertBanner(
             UIAlertSeverity severity,
             std::string message,

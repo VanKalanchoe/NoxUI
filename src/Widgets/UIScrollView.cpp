@@ -155,4 +155,11 @@ namespace NoxUI
     {
         m_ScrollBar.Paint(drawList, theme, ScrollOffsetY);
     }
+
+    void UIScrollView::HashState(UIStateHasher& h) const
+    {
+        UIElement::HashState(h);
+        h(ScrollOffsetY, ScrollSpeed, ChildSpacing, m_ContentHeight, m_ViewportHeight);
+        m_ScrollBar.Hash(h);
+    }
 }

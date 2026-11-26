@@ -153,4 +153,10 @@ namespace NoxUI
             drawList.AddText(Label, font, { center.x - lSz.x * 0.5f, center.y + radius + fontSize + 6.0f }, fontSize, mutedCol);
         }
     }
+
+    void UIRotaryKnob::HashState(UIStateHasher& h) const
+    {
+        UIElement::HashState(h);
+        h(Label, MinValue, MaxValue, m_Value, m_Dragging);
+    }
 }

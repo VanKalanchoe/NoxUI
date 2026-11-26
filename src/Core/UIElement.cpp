@@ -1,7 +1,9 @@
 #include "NoxUI/Core/UIElement.h"
+#include "NoxUI/Core/UIContext.h"
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 #include "NoxUI/Core/UILog.h"
 #include "NoxUI/Rendering/UIDrawList.h"
@@ -98,6 +100,58 @@ namespace NoxUI
         return m_DesiredSize;
     }
 
+    void UIElement::HashState(UIStateHasher& h) const
+    {
+        h(Name, StyleClass, StyleVariant, Tooltip, Visible, ClipChildren, DrawBackground, Focusable, CapturesTab, HitTestMode, WidthMode,
+          HeightMode, FixedSize, MinSize, MaxSize, FlexWeight, VeilWhenDisabled, HAlign, VAlign, Margin, Padding, AnchorMin, AnchorMax,
+          AnchorOffsets, AcceptedDropType);
+        h(m_State, m_HasResolvedStyle, m_StyleSettled);
+        if (!m_StyleSettled) // (a transition still running: the box itself; settled, it is the theme's for class / variant / state)
+            h(m_CurrentStyle);
+    }
+
+    void UIElement::HashPaintOutput(UIStateHasher& h, UIPaintMemo& memo) const
+    {
+        const UIContext* context = UIContext::GetCurrent();
+        if (!context || !context->GetTheme())
+        {
+            h.Complete = false; // (nothing to paint with: no proof)
+            return;
+        }
+        thread_local UIDrawList scratch;
+        scratch.SetFingerprintOnly(true); // (no glyph rasterized for it)
+        scratch.Clear(context->GetViewportSize());
+        const_cast<UIElement*>(this)->OnPaint(scratch, *context->GetTheme()); // (painting changes nothing but caches of what it paints)
+        const auto& prims = scratch.GetPrimitives();
+        const auto& clips = scratch.GetClipRects();
+        const bool same = prims.size() == memo.Primitives.size() && clips.size() == memo.ClipRects.size() &&
+                          (prims.empty() || std::memcmp(prims.data(), memo.Primitives.data(), prims.size() * sizeof(UIPrimitive)) == 0) &&
+                          (clips.empty() || std::memcmp(clips.data(), memo.ClipRects.data(), clips.size() * sizeof(UIClipRect)) == 0);
+        if (!same)
+        {
+            memo.Primitives = prims;
+            memo.ClipRects = clips;
+            ++memo.Version;
+        }
+        h.Add(memo.Version);
+    }
+
+    void UIElement::HashTree(UIStateHasher& h) const
+    {
+        h.Add(static_cast<const void*>(this));
+        if (!Visible) // (nothing inside a hidden element is drawn; showing it again changes Visible)
+        {
+            h.Add(false);
+            return;
+        }
+        if (typeid(*this) != StateHashClass())
+            h.Complete = false;
+        HashState(h);
+        h.Add(m_Children.size());
+        for (const auto& child : m_Children)
+            child->HashTree(h);
+    }
+
     float UIElement::HeightForWidth(float width)
     {
         if (s_LayoutPass == 0) // (outside a layout pass: nothing to remember it for)
@@ -185,10 +239,23 @@ namespace NoxUI
     {
         if (OnSync)
             OnSync();
-        // (a snapshot: a sync that breaks the rule and changes the children does not invalidate the walk)
-        const std::vector<Ref<UIElement>> children = m_Children;
-        for (const auto& child : children)
+        OnPoll();
+        // (a snapshot: a sync that breaks the rule and changes the children does not invalidate the walk -- kept in a buffer per
+        // depth that is reused, not allocated for every element every frame)
+        thread_local std::vector<std::vector<Ref<UIElement>>> s_Snapshots;
+        thread_local size_t s_Depth = 0;
+        if (s_Snapshots.size() <= s_Depth)
+            s_Snapshots.resize(s_Depth + 1);
+        const size_t depth = s_Depth;
+        s_Snapshots[depth].assign(m_Children.begin(), m_Children.end());
+        ++s_Depth;
+        for (size_t i = 0; i < s_Snapshots[depth].size(); ++i) // (indexed each time: a deeper level may grow s_Snapshots)
+        {
+            const Ref<UIElement> child = s_Snapshots[depth][i];
             child->SyncRecursive();
+        }
+        --s_Depth;
+        s_Snapshots[s_Depth].clear();
     }
 
     void UIElement::ClearSyncsRecursive()
@@ -216,6 +283,7 @@ namespace NoxUI
             const float alpha = 1.0f - std::exp(-dt / std::max(target.TransitionSeconds, 0.001f));
             m_CurrentStyle = UIStyleBox::Lerp(m_CurrentStyle, target, alpha);
         }
+        m_StyleSettled = UIStyleBox::Equal(m_CurrentStyle, target);
 
         for (const auto& child : m_Children)
             child->UpdateStylesRecursive(theme, dt);

@@ -12,6 +12,7 @@ namespace NoxUI
     class UICollapsingHeader : public UIStackBox
     {
     public:
+        NOXUI_STATE_HASH(UICollapsingHeader)
         explicit UICollapsingHeader(std::string title, bool expanded = true);
 
         void SetExpanded(bool expanded);

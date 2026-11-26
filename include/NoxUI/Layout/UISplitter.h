@@ -8,6 +8,7 @@ namespace NoxUI
     class UISplitter : public UIElement
     {
     public:
+        NOXUI_STATE_HASH(UISplitter)
         explicit UISplitter(UIOrientation orientation = UIOrientation::Horizontal, float splitRatio = 0.5f);
 
         void SetPanes(const Ref<UIElement>& first, const Ref<UIElement>& second);

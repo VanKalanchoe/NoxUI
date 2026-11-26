@@ -81,6 +81,12 @@ namespace NoxUI
         class UICardHeader final : public UIElement
         {
         public:
+            void HashState(UIStateHasher& h) const override
+            {
+                UIElement::HashState(h);
+                h(m_Title, m_Expanded);
+            }
+            const std::type_info& StateHashClass() const override { return typeid(UICardHeader); }
             UICardHeader(std::string title, bool expanded) : m_Title(std::move(title)), m_Expanded(expanded)
             {
                 StyleClass = "SectionHeader";
@@ -518,5 +524,11 @@ namespace NoxUI
                     reasonLabel->Text = text;
             }
         });
+    }
+
+    void UIPropertyRow::HashState(UIStateHasher& h) const
+    {
+        UIElement::HashState(h);
+        h(LabelRatio, MinLabelWidth, MaxLabelWidth, m_Label, m_Value);
     }
 }

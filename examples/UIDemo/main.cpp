@@ -690,7 +690,9 @@ SDL_AppResult SDL_AppIterate(void* appstate)
             char buf[96]{};
             // (the frame time is one frame to the next -- waiting for the GPU and the swapchain included; the UI's CPU work is
             // UpdateAndRender alone)
-            std::snprintf(buf, sizeof(buf), "FPS: %.1f (frame: %.2f ms) | UI CPU: %.3f ms", fps, cpuAvgMs, uiAvgMs);
+            const uint64_t frames = std::max<uint64_t>(state->frameNumber, 1);
+            std::snprintf(buf, sizeof(buf), "FPS: %.1f (frame: %.2f ms) | UI CPU: %.3f ms | idle: %.0f%%", fps, cpuAvgMs, uiAvgMs,
+                          100.0 * static_cast<double>(state->uiContext.GetSkippedFrameCount()) / static_cast<double>(frames));
             state->telemetryFpsLabel->Text = buf;
         }
         if (state->telemetryGpuLabel)

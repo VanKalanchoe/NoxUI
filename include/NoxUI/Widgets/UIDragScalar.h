@@ -17,6 +17,7 @@ namespace NoxUI
     class UIDragScalar : public UIElement
     {
     public:
+        NOXUI_STATE_HASH(UIDragScalar)
         explicit UIDragScalar(float value = 0.0f, float speed = 0.05f,
                               std::function<void(float)> onChanged = {});
 

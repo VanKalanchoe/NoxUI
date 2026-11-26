@@ -15,6 +15,7 @@ namespace NoxUI
     class UITagInput : public UIStackBox
     {
     public:
+        NOXUI_STATE_HASH(UITagInput)
         explicit UITagInput(std::vector<std::string> initialTags = {});
 
         void SetTags(std::vector<std::string> tags, bool notify = false);

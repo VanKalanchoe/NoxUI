@@ -125,6 +125,7 @@ namespace NoxUI
     class UIPropertyGrid : public UIScrollView
     {
     public:
+        NOXUI_STATE_HASH(UIPropertyGrid)
         UIPropertyGrid();
 
         Ref<UIStackBox> AddSection(const std::string& title, bool expanded = true);
@@ -154,7 +155,7 @@ namespace NoxUI
         float LabelRatio = 0.38f;
 
     protected:
-        void OnUpdate(float dt) override;
+        void OnPoll() override; // (each property follows its model, before the fingerprint)
 
     private:
         struct SyncEntry

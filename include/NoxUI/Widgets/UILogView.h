@@ -25,6 +25,7 @@ namespace NoxUI
     class UILogView : public UIStackBox
     {
     public:
+        NOXUI_STATE_HASH(UILogView)
         UILogView();
 
         void AddLog(UILogLevel level, std::string message);

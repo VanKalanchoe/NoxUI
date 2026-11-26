@@ -11,6 +11,7 @@ namespace NoxUI
     class UIRotaryKnob : public UIElement
     {
     public:
+        NOXUI_STATE_HASH(UIRotaryKnob)
         explicit UIRotaryKnob(
             std::string label = {},
             float value = 0.5f,

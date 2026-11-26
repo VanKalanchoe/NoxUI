@@ -51,4 +51,10 @@ namespace NoxUI
             );
         }
     }
+
+    void UISpinner::HashState(UIStateHasher& h) const
+    {
+        UIElement::HashState(h);
+        h(Size, Speed, Color, m_Phase);
+    }
 }

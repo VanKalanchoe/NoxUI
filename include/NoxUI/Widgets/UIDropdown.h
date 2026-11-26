@@ -15,6 +15,7 @@ namespace NoxUI
     class UIDropdown : public UIElement
     {
     public:
+        NOXUI_STATE_HASH(UIDropdown)
         explicit UIDropdown(
             UIContext* context = nullptr,
             std::vector<std::string> items = {},

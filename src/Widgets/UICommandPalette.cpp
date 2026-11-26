@@ -32,6 +32,18 @@ namespace NoxUI
         class UIPaletteBackdrop : public UIAnchorBox
         {
         public:
+
+            void HashState(UIStateHasher& h) const override
+
+            {
+
+                UIAnchorBox::HashState(h);
+
+                h(static_cast<const void*>(m_Context));
+
+            }
+
+            const std::type_info& StateHashClass() const override { return typeid(UIPaletteBackdrop); }
             explicit UIPaletteBackdrop(UIContext* context)
                 : m_Context(context)
             {
@@ -187,5 +199,17 @@ namespace NoxUI
         m_Context.ClearOverlay();
         if (cb)
             cb();
+    }
+
+    void UICommandPalette::HashState(UIStateHasher& h) const
+    {
+        UIStackBox::HashState(h);
+        h(static_cast<const void*>(&m_Context), m_SelectedIndex, m_SearchInput, m_ResultsBox);
+        for (const auto* list : { &m_AllCommands, &m_Filtered })
+        {
+            h.Add(list->size());
+            for (const UICommandItem& item : *list)
+                h(item.Title, item.Category, item.Shortcut);
+        }
     }
 }

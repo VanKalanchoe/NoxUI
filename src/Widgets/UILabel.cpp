@@ -320,4 +320,10 @@ namespace NoxUI
 
         drawList.AddText(painted, FontAsset, pos, fontSize, color);
     }
+
+    void UILabel::HashState(UIStateHasher& h) const
+    {
+        UIElement::HashState(h);
+        h(Text, FontSizeOverride, UseColorOverride, WordWrap, Elide, ColorOverride, FontAsset);
+    }
 }

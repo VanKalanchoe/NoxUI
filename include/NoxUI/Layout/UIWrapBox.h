@@ -8,6 +8,7 @@ namespace NoxUI
     class UIWrapBox : public UIElement
     {
     public:
+        NOXUI_STATE_HASH(UIWrapBox)
         explicit UIWrapBox(float hSpacing = 6.0f, float vSpacing = 6.0f);
 
         float HSpacing = 6.0f;

@@ -100,4 +100,10 @@ namespace NoxUI
             m_Label->Text.clear();
         }
     }
+
+    void UIProgressBar::HashState(UIStateHasher& h) const
+    {
+        UIElement::HashState(h);
+        h(ShowPercentage, FillColor, m_Fraction, m_OverlayText, m_Label);
+    }
 }

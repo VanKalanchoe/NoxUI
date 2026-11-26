@@ -38,6 +38,7 @@ namespace NoxUI
     class UINodeGraph : public UIElement
     {
     public:
+        NOXUI_STATE_HASH(UINodeGraph)
         UINodeGraph();
 
         uint64_t AddNode(UINode node);

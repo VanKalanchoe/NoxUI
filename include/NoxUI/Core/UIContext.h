@@ -10,6 +10,9 @@
 #include "NoxUI/Core/UIRef.h"
 #include "NoxUI/Core/UITheme.h"
 
+// (UIFrameReplay and tools test for it: SetVerifyMode exists)
+#define NOXUI_HAS_VERIFY_MODE 1
+
 namespace NoxUI
 {
     class UIDrawList;
@@ -58,12 +61,42 @@ namespace NoxUI
         bool OnScroll(const UIVec2& scrollDelta);
         bool OnKeyDown(UIKey key, uint16_t mods, bool repeat = false) { return OnKeyDown(static_cast<int>(key), mods, repeat); }
         bool OnKeyDown(int keyCode, uint16_t mods, bool repeat = false);
-        void OnKeyUp(UIKey key, uint16_t mods) { (void)key; m_Modifiers = mods; s_Modifiers = mods; }
-        void SetModifiers(uint16_t mods) { m_Modifiers = mods; s_Modifiers = mods; }
+        void OnKeyUp(UIKey key, uint16_t mods)
+        {
+            (void)key;
+            m_Modifiers = mods;
+            s_Modifiers = mods;
+            m_ChangedSinceFrame = true;
+        }
+        void SetModifiers(uint16_t mods)
+        {
+            if (mods != m_Modifiers)
+                m_ChangedSinceFrame = true;
+            m_Modifiers = mods;
+            s_Modifiers = mods;
+        }
         uint16_t GetModifiers() const { return m_Modifiers; }
         bool OnTextInput(std::string_view text);
 
         void UpdateAndRender(UIDrawList& drawList, const UIVec2& viewportSize, float dt);
+
+        // Idle frames. After the OnSync hooks, UpdateAndRender fingerprints the UI (UIElement::HashState of every visible element,
+        // plus the context's own state: hover, focus, toasts, theme, viewport). When no input came since the last frame, the last
+        // frame changed nothing itself (no transition, animation or timer running), the fingerprint equals the one it left and
+        // `drawList` is still the list it drew (UIDrawList::GetRevision), nothing would be drawn differently: layout and paint are
+        // skipped and `drawList` keeps what it holds. An element whose class has no complete fingerprint keeps every frame drawn.
+        // A callback that draws from state outside the UI (an icon painter reading a game value) calls RequestRedraw when it changes.
+        void SetIncremental(bool enabled) { m_Incremental = enabled; }
+        bool IsIncremental() const { return m_Incremental; }
+        void RequestRedraw() { m_ChangedSinceFrame = true; }
+        // Whether the last UpdateAndRender kept the previous draw list (a backend may skip its upload: the revision did not change).
+        bool WasLastFrameSkipped() const { return m_LastFrameSkipped; }
+        uint64_t GetSkippedFrameCount() const { return m_SkippedFrames; }
+        // Verify mode (tests, debugging): a frame that would be skipped is drawn in full anyway and compared with what it would have
+        // kept -- the draw list byte for byte and the fingerprint; a difference is an error (a state some HashState misses).
+        void SetVerifyMode(bool enabled) { m_VerifyMode = enabled; }
+        uint64_t GetVerifyFailureCount() const { return m_VerifyFailures; }
+        uint64_t GetVerifiedFrameCount() const { return m_VerifiedFrames; }
 
         UIElement* GetHovered() const { return m_Hovered.get(); }
         UIElement* GetFocused() const { return m_Focused.get(); }
@@ -80,7 +113,11 @@ namespace NoxUI
 
         // Runs `action` at the start of this context's next frame, after the input of this one: what must not happen inside the
         // callback that asks for it (a list rebuilt from one of its own rows' clicks, a popup shown again from its own button).
-        void Defer(std::function<void()> action) { m_Deferred.push_back(std::move(action)); }
+        void Defer(std::function<void()> action)
+        {
+            m_Deferred.push_back(std::move(action));
+            m_ChangedSinceFrame = true;
+        }
 
         // The input state of the last event any context saw (every OS window's): the UIMod bits held, and whether a mouse button
         // is held (0: any; else a UIMouseButton). For code outside an event (a finished drag becomes one undo step).
@@ -89,6 +126,7 @@ namespace NoxUI
         const UIDragPayload& GetDragPayload() const { return m_ActivePayload; }
 
     private:
+        uint64_t HashFrame(const UIVec2& viewportSize, bool& complete) const;
         bool IsInTree(const UIElement* element) const;
         void DropDetachedInput();
         void UpdateHover(const UIVec2& pos);
@@ -139,6 +177,20 @@ namespace NoxUI
         bool DismissToastAt(const UIVec2& pos);
         std::vector<ToastItem> m_Toasts;
         float m_ToastBottomInset = 0.0f;
+
+        // Idle frames (SetIncremental): input or a change the fingerprint does not cover came since the last frame; the fingerprint
+        // the last full frame left and whether that frame changed nothing; the draw list it drew and its revision then.
+        bool m_Incremental = true;
+        bool m_ChangedSinceFrame = true;
+        bool m_LastFrameStationary = false;
+        bool m_LastFrameSkipped = false;
+        uint64_t m_LastStateHash = 0;
+        const UIDrawList* m_LastOutputList = nullptr;
+        uint64_t m_LastOutputRevision = 0;
+        uint64_t m_SkippedFrames = 0;
+        bool m_VerifyMode = false;
+        uint64_t m_VerifyFailures = 0;
+        uint64_t m_VerifiedFrames = 0;
     };
 
     // A theme token's colour from the theme in use -- the context handling the current event or frame, else the one drawn last (a 3D

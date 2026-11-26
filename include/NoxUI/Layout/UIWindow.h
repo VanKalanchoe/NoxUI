@@ -15,6 +15,7 @@ namespace NoxUI
     class UIWindow : public UIElement
     {
     public:
+        NOXUI_STATE_HASH(UIWindow)
         explicit UIWindow(std::string title = "Window", std::function<void()> onClose = {});
 
         void SetTitle(const std::string& title);

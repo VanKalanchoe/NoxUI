@@ -21,6 +21,7 @@ namespace NoxUI
     class UIPropertyRow : public UIElement
     {
     public:
+        NOXUI_STATE_HASH(UIPropertyRow)
         UIPropertyRow(const Ref<UIElement>& label, const Ref<UIElement>& value);
 
         static constexpr float kGap = 8.0f;

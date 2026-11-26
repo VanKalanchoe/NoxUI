@@ -17,6 +17,12 @@ namespace NoxUI
         class UIDropdownBackdrop : public UIAnchorBox
         {
         public:
+            void HashState(UIStateHasher& h) const override
+            {
+                UIAnchorBox::HashState(h);
+                h(static_cast<const void*>(m_Context), m_TriggerBounds, m_Popup, m_Scroll);
+            }
+            const std::type_info& StateHashClass() const override { return typeid(UIDropdownBackdrop); }
             UIDropdownBackdrop(UIContext* context, const UIRect& triggerBounds, const Ref<UIStackBox>& popup, const Ref<UIScrollView>& scroll)
                 : m_Context(context), m_TriggerBounds(triggerBounds), m_Popup(popup), m_Scroll(scroll)
             {
@@ -230,5 +236,11 @@ namespace NoxUI
         popup->AddChild(scroll);
         Ref<UIDropdownBackdrop> backdrop(new UIDropdownBackdrop(m_Context, b, popup, scroll));
         m_Context->SetOverlay(backdrop);
+    }
+
+    void UIDropdown::HashState(UIStateHasher& h) const
+    {
+        UIElement::HashState(h);
+        h(static_cast<const void*>(m_Context), m_Items, m_SelectedIndex, m_Label);
     }
 }

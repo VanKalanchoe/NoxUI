@@ -64,4 +64,10 @@ namespace NoxUI
             m_ChipWrap->AddChild(chip);
         }
     }
+
+    void UITagInput::HashState(UIStateHasher& h) const
+    {
+        UIStackBox::HashState(h);
+        h(m_Tags, m_ChipWrap, m_Input);
+    }
 }

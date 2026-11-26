@@ -19,6 +19,7 @@ namespace NoxUI
     class UILabel : public UIElement
     {
     public:
+        NOXUI_STATE_HASH(UILabel)
         explicit UILabel(std::string text = {}, float fontSize = 0.0f);
         ~UILabel() override;
 

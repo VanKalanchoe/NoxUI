@@ -134,4 +134,10 @@ namespace NoxUI
         const UIVec2 tSz = UILabel::MeasureText(buf, font, fontSize);
         drawList.AddText(buf, font, { b.Max.x - pad - tSz.x, b.Min.y + 4.0f }, fontSize, textCol);
     }
+
+    void UITimeline::HashState(UIStateHasher& h) const
+    {
+        UIElement::HashState(h);
+        h(m_Duration, m_CurrentTime, m_Keyframes, m_Scrubbing);
+    }
 }

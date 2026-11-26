@@ -292,4 +292,10 @@ namespace NoxUI
             { muted.r, muted.g, muted.b, 0.7f }
         );
     }
+
+    void UIWindow::HashState(UIStateHasher& h) const
+    {
+        UIElement::HashState(h);
+        h(m_TitleBarHeight, m_DraggingMove, m_DraggingResize, m_ResizeEdges, m_HoverResizeEdges, m_TitleLabel, m_CloseBtn, m_Content);
+    }
 }

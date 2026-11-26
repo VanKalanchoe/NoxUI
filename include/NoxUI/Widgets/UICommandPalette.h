@@ -23,6 +23,7 @@ namespace NoxUI
     class UICommandPalette : public UIStackBox
     {
     public:
+        NOXUI_STATE_HASH(UICommandPalette)
         UICommandPalette(UIContext& context, std::vector<UICommandItem> commands);
 
         static void Open(UIContext& context, std::vector<UICommandItem> commands);

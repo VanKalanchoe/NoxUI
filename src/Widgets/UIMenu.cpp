@@ -12,9 +12,28 @@ namespace NoxUI
 {
     namespace
     {
+        void HashMenuItems(UIStateHasher& h, const std::vector<UIMenuItem>& items)
+        {
+            h.Add(items.size());
+            for (const UIMenuItem& item : items)
+            {
+                h(item.Label, item.Shortcut, item.IsSeparator, item.Enabled, item.Checked, item.IsInfo, item.Tooltip);
+                HashMenuItems(h, item.SubItems);
+            }
+        }
+
         class UIMenuHostBase : public UIAnchorBox
         {
         public:
+            void HashState(UIStateHasher& h) const override
+            {
+                UIAnchorBox::HashState(h);
+                h(static_cast<const void*>(m_Ctx));
+                h.Add(m_Popups.size());
+                for (const PopupEntry& entry : m_Popups)
+                    h(entry.Popup, entry.AnchorRect, entry.HasAnchorRect, entry.AlignRight, entry.IsSubmenu);
+            }
+            const std::type_info& StateHashClass() const override { return typeid(UIMenuHostBase); }
             explicit UIMenuHostBase(UIContext* ctx) : m_Ctx(ctx)
             {
                 HitTestMode = UIHitTestMode::Self;
@@ -133,6 +152,20 @@ namespace NoxUI
         class UIMenuRow final : public UIStackBox
         {
         public:
+
+            void HashState(UIStateHasher& h) const override
+
+            {
+
+                UIStackBox::HashState(h);
+
+                h(static_cast<const void*>(m_Context), static_cast<const void*>(m_Host), m_Depth, m_Checked, m_HasSubmenu, m_TitleLabel, m_RightLabel);
+
+                HashMenuItems(h, m_SubItems);
+
+            }
+
+            const std::type_info& StateHashClass() const override { return typeid(UIMenuRow); }
             UIMenuRow(const UIMenuItem& item, UIContext* context, UIMenuHostBase* host, int depth)
                 : UIStackBox(UIOrientation::Horizontal, 14.0f)
                 , m_Context(context)
@@ -259,6 +292,16 @@ namespace NoxUI
         class UIMenuTriggerButton final : public UIButton
         {
         public:
+
+            void HashState(UIStateHasher& h) const override
+
+            {
+
+                UIButton::HashState(h);
+
+            }
+
+            const std::type_info& StateHashClass() const override { return typeid(UIMenuTriggerButton); }
             using UIButton::UIButton;
             std::function<void()> OnHoverEnter;
 
@@ -273,6 +316,18 @@ namespace NoxUI
         class UIMenuOverlayHost final : public UIMenuHostBase
         {
         public:
+
+            void HashState(UIStateHasher& h) const override
+
+            {
+
+                UIMenuHostBase::HashState(h);
+
+                h(static_cast<const void*>(m_Bar));
+
+            }
+
+            const std::type_info& StateHashClass() const override { return typeid(UIMenuOverlayHost); }
             UIMenuOverlayHost(UIContext* ctx, UIMenuBar* bar)
                 : UIMenuHostBase(ctx), m_Bar(bar)
             {
@@ -309,6 +364,16 @@ namespace NoxUI
         class UIContextMenuBackdrop final : public UIMenuHostBase
         {
         public:
+
+            void HashState(UIStateHasher& h) const override
+
+            {
+
+                UIMenuHostBase::HashState(h);
+
+            }
+
+            const std::type_info& StateHashClass() const override { return typeid(UIContextMenuBackdrop); }
             using UIMenuHostBase::UIMenuHostBase;
 
             bool OnPointerDown(const UIPointerEvent& e) override
@@ -457,5 +522,17 @@ namespace NoxUI
         };
 
         AddChild(trigger);
+    }
+
+    void UIMenuPopup::HashState(UIStateHasher& h) const
+    {
+        UIStackBox::HashState(h);
+        h(m_ScrollView);
+    }
+
+    void UIMenuBar::HashState(UIStateHasher& h) const
+    {
+        UIStackBox::HashState(h);
+        h(m_ActiveOverlay, static_cast<const void*>(m_OpenTrigger));
     }
 }

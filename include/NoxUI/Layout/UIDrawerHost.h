@@ -16,6 +16,7 @@ namespace NoxUI
     class UIDrawerHost : public UIElement
     {
     public:
+        NOXUI_STATE_HASH(UIDrawerHost)
         explicit UIDrawerHost(Ref<UIElement> content = {});
 
         void SetContent(const Ref<UIElement>& content);

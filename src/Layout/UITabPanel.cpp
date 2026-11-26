@@ -14,6 +14,12 @@ namespace NoxUI
         class UITabButton final : public UIButton
         {
         public:
+            void HashState(UIStateHasher& h) const override
+            {
+                UIButton::HashState(h);
+                h(m_Pressed, m_DraggedOut, m_PressPos);
+            }
+            const std::type_info& StateHashClass() const override { return typeid(UITabButton); }
             explicit UITabButton(std::string text)
                 : UIButton(std::move(text), {})
             {
@@ -73,6 +79,12 @@ namespace NoxUI
         class UICornerUndockHandle final : public UIElement
         {
         public:
+            void HashState(UIStateHasher& h) const override
+            {
+                UIElement::HashState(h);
+                h(static_cast<const void*>(&m_Owner), m_Pressed, m_DraggedOut, m_PressPos); // (the owner's state: its own HashState)
+            }
+            const std::type_info& StateHashClass() const override { return typeid(UICornerUndockHandle); }
             explicit UICornerUndockHandle(UITabPanel& owner) : m_Owner(owner)
             {
                 HitTestMode = UIHitTestMode::Self;
@@ -394,5 +406,14 @@ namespace NoxUI
                 m_Tabs[i].Content->Visible = active;
         }
         RefreshCornerHandleVisibility();
+    }
+
+    void UITabPanel::HashState(UIStateHasher& h) const
+    {
+        UIStackBox::HashState(h);
+        h(m_TabBar, m_ContentHost, m_CornerHandle, m_ActiveIndex, m_ShowUndockCornerHandle);
+        h.Add(m_Tabs.size());
+        for (const TabEntry& tab : m_Tabs)
+            h(tab.Title, tab.Button, tab.Content);
     }
 }

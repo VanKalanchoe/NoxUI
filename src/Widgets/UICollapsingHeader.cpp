@@ -10,6 +10,12 @@ namespace NoxUI
         class UICollapseToggleButton final : public UIButton
         {
         public:
+            void HashState(UIStateHasher& h) const override
+            {
+                UIButton::HashState(h);
+                h(m_ExpandedFlag != nullptr, m_ExpandedFlag && *m_ExpandedFlag);
+            }
+            const std::type_info& StateHashClass() const override { return typeid(UICollapseToggleButton); }
             UICollapseToggleButton(std::function<void()> onClick, const bool* expandedFlag)
                 : UIButton("", std::move(onClick)), m_ExpandedFlag(expandedFlag)
             {
@@ -87,5 +93,11 @@ namespace NoxUI
         if (!m_HeaderBtn)
             return;
         m_HeaderBtn->SetText(m_Title);
+    }
+
+    void UICollapsingHeader::HashState(UIStateHasher& h) const
+    {
+        UIStackBox::HashState(h);
+        h(m_Title, m_Expanded, m_HeaderBtn, m_Content);
     }
 }

@@ -377,4 +377,21 @@ namespace NoxUI
             ++idx;
         }
     }
+
+    void UIStackBox::HashState(UIStateHasher& h) const
+    {
+        UIElement::HashState(h);
+        h(Orientation, Spacing);
+    }
+
+    void UIAnchorBox::HashState(UIStateHasher& h) const
+    {
+        UIElement::HashState(h);
+    }
+
+    void UIGridBox::HashState(UIStateHasher& h) const
+    {
+        UIElement::HashState(h);
+        h(Columns, ColumnSpacing, RowSpacing, MinColumnWidth);
+    }
 }

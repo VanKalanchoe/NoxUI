@@ -10,6 +10,7 @@ namespace NoxUI
     class UIImage : public UIElement
     {
     public:
+        NOXUI_STATE_HASH(UIImage)
         explicit UIImage(UITextureID textureId = kInvalidTextureID, const UIVec2& desiredSize = { 64.0f, 64.0f });
 
         UITextureID TextureId = kInvalidTextureID;

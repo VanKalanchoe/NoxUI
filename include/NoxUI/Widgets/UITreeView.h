@@ -36,6 +36,7 @@ namespace NoxUI
     class UITreeView : public UIElement
     {
     public:
+        NOXUI_STATE_HASH(UITreeView)
         UITreeView();
 
         void SetNodes(std::vector<UITreeNode> nodes);

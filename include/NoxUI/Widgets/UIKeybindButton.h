@@ -12,6 +12,7 @@ namespace NoxUI
     class UIKeybindButton : public UIButton
     {
     public:
+        NOXUI_STATE_HASH(UIKeybindButton)
         explicit UIKeybindButton(
             int initialKeyCode = 0,
             uint16_t initialMods = 0,

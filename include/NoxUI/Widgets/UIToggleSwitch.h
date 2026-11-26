@@ -13,6 +13,7 @@ namespace NoxUI
     class UIToggleSwitch : public UIElement
     {
     public:
+        NOXUI_STATE_HASH(UIToggleSwitch)
         explicit UIToggleSwitch(
             std::string label = {},
             bool checked = false,

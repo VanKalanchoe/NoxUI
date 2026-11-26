@@ -558,4 +558,26 @@ namespace NoxUI
 
         drawList.PopClipRect();
     }
+
+    void UINodeGraph::HashState(UIStateHasher& h) const
+    {
+        UIElement::HashState(h);
+        h(m_NextId, m_Pan, m_Zoom, m_SelectedNodeId, m_SelectedLinkId, m_Panning, m_DraggingNode, m_DraggingPinId, m_DraggingPinIsOutput, m_DragMouseScreen);
+        auto pins = [&h](const std::vector<UINodePin>& list)
+        {
+            h.Add(list.size());
+            for (const UINodePin& pin : list)
+                h(pin.Id, pin.Name, pin.IsOutput, pin.Color);
+        };
+        h.Add(m_Nodes.size()); // (GetNodes / GetLinks hand them out to change)
+        for (const UINode& node : m_Nodes)
+        {
+            h(node.Id, node.Title, node.HeaderColor, node.Position);
+            pins(node.Inputs);
+            pins(node.Outputs);
+        }
+        h.Add(m_Links.size());
+        for (const UINodeLink& link : m_Links)
+            h(link.Id, link.OutputPinId, link.InputPinId);
+    }
 }

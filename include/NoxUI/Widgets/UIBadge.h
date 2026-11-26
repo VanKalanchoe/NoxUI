@@ -12,6 +12,7 @@ namespace NoxUI
     class UIBadge : public UIElement
     {
     public:
+        NOXUI_STATE_HASH(UIBadge)
         explicit UIBadge(
             std::string text,
             const UIColor& badgeColor = { 0.24f, 0.56f, 0.96f, 1.0f });

@@ -183,4 +183,10 @@ namespace NoxUI
             drawList.AddText(buf, font, { plotRect.Max.x - 48.0f, b.Min.y + Padding.Top - 2.0f }, 12.5f, { 1.0f, 0.88f, 0.35f, 1.0f });
         }
     }
+
+    void UIPlotGraph::HashState(UIStateHasher& h) const
+    {
+        UIElement::HashState(h);
+        h(Title, MaxSamples, AutoScale, MinValue, MaxValue, LineColor, m_Mode, m_Values, m_HoveredIndex);
+    }
 }

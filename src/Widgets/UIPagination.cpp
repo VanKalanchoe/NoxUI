@@ -83,4 +83,10 @@ namespace NoxUI
             btn->OnClick = [this, p]() { SetCurrentPage(p, true); };
         }
     }
+
+    void UIPagination::HashState(UIStateHasher& h) const
+    {
+        UIStackBox::HashState(h);
+        h(m_TotalPages, m_CurrentPage, m_PrevBtn, m_NextBtn, m_PageBtns);
+    }
 }

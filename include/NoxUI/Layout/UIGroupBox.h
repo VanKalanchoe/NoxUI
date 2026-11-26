@@ -12,6 +12,7 @@ namespace NoxUI
     class UIGroupBox : public UIStackBox
     {
     public:
+        NOXUI_STATE_HASH(UIGroupBox)
         explicit UIGroupBox(std::string title, const UIColor& accentColor = { 0.24f, 0.56f, 0.96f, 1.0f });
 
         void SetTitle(const std::string& title);

@@ -13,6 +13,7 @@ namespace NoxUI
     class UIStatCard : public UIStackBox
     {
     public:
+        NOXUI_STATE_HASH(UIStatCard)
         UIStatCard(
             std::string title,
             std::string value,

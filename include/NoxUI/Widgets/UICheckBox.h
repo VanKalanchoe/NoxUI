@@ -10,6 +10,7 @@ namespace NoxUI
     class UICheckBox : public UIElement
     {
     public:
+        NOXUI_STATE_HASH(UICheckBox)
         explicit UICheckBox(std::string label = {}, bool checked = false, std::function<void(bool)> onChanged = {});
 
         std::string Label;
