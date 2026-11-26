@@ -629,6 +629,8 @@ namespace NoxUI
             static_cast<size_t>(oldClip) + record.ClipCount <= pass.Old->GetClipRects().size() && oldOuter < pass.Old->GetClipRects().size())
         {
             out.AppendFrom(*pass.Old, oldPrim, record.PrimCount, oldClip, record.ClipCount, oldOuter);
+            if (pass.Segments && record.PrimCount > 0)
+                pass.Segments->push_back({ prim, oldPrim, record.PrimCount });
             record.PrimOffset = prim - parentPrim;
             record.ClipOffset = clip - parentClip;
             record.OuterRel = outerRel;

@@ -134,6 +134,29 @@ namespace NoxUI
                 index = index == oldOuter ? outer : index - oldClipFirst + clipFirst;
             }
         }
+        // The pixels a primitive can change when drawn: its quad (with the padding the vertex shader gives a shadow or a curve) within
+        // its clip rect (whose edge fades over half a pixel), in whole pixels -- what a partial redraw must redraw where it was or is.
+        // Empty (Min == Max) when it changes none.
+        static UIRect PrimitiveExtent(const UIPrimitive& prim, const UIClipRect& clip)
+        {
+            glm::vec2 padMin(0.0f), padMax(0.0f);
+            if (prim.type == UI_PRIM_ROUNDED_RECT && prim.shadowBlur > 0.0f)
+            {
+                const float expand = prim.shadowBlur * 1.5f;
+                padMin = glm::max(glm::vec2(0.0f), glm::vec2(expand) - prim.shadowOffset);
+                padMax = glm::max(glm::vec2(0.0f), glm::vec2(expand) + prim.shadowOffset);
+            }
+            else if (prim.type == UI_PRIM_CUBIC_BEZIER)
+            {
+                padMin = padMax = glm::vec2(prim.borderThickness * 0.5f + 2.0f);
+            }
+            glm::vec2 lo = glm::max(glm::vec2(prim.bounds.x, prim.bounds.y) - padMin, glm::vec2(clip.rect.x, clip.rect.y) - 0.5f);
+            glm::vec2 hi = glm::min(glm::vec2(prim.bounds.z, prim.bounds.w) + padMax, glm::vec2(clip.rect.z, clip.rect.w) + 0.5f);
+            if (!(hi.x > lo.x && hi.y > lo.y)) // (NaN too)
+                return {};
+            return { glm::floor(lo), glm::ceil(hi) };
+        }
+
         // Exchanges the contents (primitives, clip rects) with `other`: UIContext keeps the last frame's list for AppendFrom without
         // copying it.
         void SwapContents(UIDrawList& other)

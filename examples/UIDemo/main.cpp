@@ -268,6 +268,14 @@ namespace
         bool uiCacheEnabled = true;
         bool traceUiChanges = false; // (--trace-ui-changes [file]: log what keeps the UI from being idle)
         bool partialFrames = true;   // (--no-partial: drawn frames lay out and paint everything, no layout / paint cache)
+        bool partialRedraw = true;   // (--no-partial-redraw: the UI cache is redrawn in full, not only the rects that changed)
+        bool verifyCache = false;    // (--verify-ui-cache: each partial redraw compared with drawing everything; slow)
+        bool fixedClock = false;     // (--fixed-clock: the UI's clock and frame time advance 1/60 s a frame, whatever the real time)
+        uint64_t fixedClockMs = 0;
+        uint64_t uiCacheVerified = 0, uiCacheVerifyFailures = 0;
+        bool verifyCacheThisFrame = false;
+        uint64_t uiPartialRedraws = 0;
+        double uiPartialArea = 0.0;
         uint64_t partialMeasured = 0, partialPainted = 0, partialCopied = 0; // (summed over drawn frames, for the summary at exit)
         // Telemetry over the last quarter second, split by kind of frame (an average over a mix of idle and drawn frames jumps):
         // UI CPU on drawn and on idle frames, GPU time of frames that redrew the UI and of frames that only composited it.
@@ -442,6 +450,70 @@ static void shutdownNoxUI(AppState& state)
     state.uiInitialized = false;
 }
 
+// --verify-ui-cache: after a partial redraw of the UI cache, the whole list is drawn into a texture of its own (cleared to the same
+// colour) and both are read back -- they must be the same, byte for byte (what redrawing only the dirty rects promises).
+static void verifyUiCache(AppState& state, const NoxUI_NoxRHIDrawData& drawData, nri::Extent2D extent)
+{
+    const uint32_t w = extent.width >= 64u ? (extent.width & ~63u) : extent.width; // (256-byte rows for D3D12's copy)
+    const uint32_t h = extent.height;
+    if (w == 0 || h == 0 || !state.uiCache)
+        return;
+    state.device.waitIdle();
+    nri::Texture full = state.device.createTexture({ .width = w, .height = h, .arrayLayers = 1, .mipLevels = 1, .sampleCount = 1,
+                                                     .usage = NRI_TEXTURE_USAGE_COLOR_ATTACHMENT, .format = NRI_FORMAT_SURFACE });
+    const uint64_t bytes = static_cast<uint64_t>(w) * h * 4ull;
+    nri::Buffer fullPixels = state.device.createBuffer({ .size = bytes, .usage = NRI_BUFFER_USAGE_READBACK });
+    nri::Buffer cachePixels = state.device.createBuffer({ .size = bytes, .usage = NRI_BUFFER_USAGE_READBACK });
+    nri::CommandAllocator alloc = state.device.createCommandAllocator(NRI_COMMAND_BUFFER_RESET_WITH_ALLOCATOR, NRI_QUEUE_GRAPHICS);
+    nri::CommandBuffer cmd = alloc.allocateCommandBuffer(1);
+    cmd.begin(0, true);
+    NoxUI_ImplNoxRHI_CopyData(cmd, drawData);
+    const nri::RenderAttachDesc colorAttach{ .attachment = full.handle(), .loadOp = NRI_LOAD_OP_CLEAR, .storeOp = NRI_STORE_OP_STORE,
+                                             .clearColor = { state.uiCacheClear[0], state.uiCacheClear[1], state.uiCacheClear[2], 1.0f } };
+    const nri::RenderDesc renderDesc{ .renderArea = { w, h }, .colorAttachments = { colorAttach }, .isSwapchainPass = false };
+    cmd.beginRendering(renderDesc);
+    NoxUI_ImplNoxRHI_RenderDrawData(cmd, drawData);
+    cmd.endRendering();
+    // (the cache was last sampled by the composite: read for the copy, then left as the render graph expects it)
+    const nri::TextureBarrierDesc toCopy[] = { { .texture = state.uiCache.handle(),
+                                                 .before = { nri::AccessBits::ShaderRead, nri::StageBits::Fragment },
+                                                 .after = { nri::AccessBits::TransferRead, nri::StageBits::Transfer } } };
+    cmd.resourceBarriers(toCopy, {});
+    cmd.executionBarrier();
+    full.copyToBuffer(cmd.handle(), fullPixels.handle(), 0, 0, w, h);
+    state.uiCache.copyToBuffer(cmd.handle(), cachePixels.handle(), 0, 0, w, h);
+    const nri::TextureBarrierDesc back[] = { { .texture = state.uiCache.handle(),
+                                               .before = { nri::AccessBits::TransferRead, nri::StageBits::Transfer },
+                                               .after = { nri::AccessBits::ShaderRead, nri::StageBits::Fragment } } };
+    cmd.resourceBarriers(back, {});
+    cmd.end(0);
+    state.device.submitAndWait(cmd, 0);
+
+    const auto* a = static_cast<const uint8_t*>(fullPixels.map(0, bytes));
+    const auto* b = static_cast<const uint8_t*>(cachePixels.map(0, bytes));
+    uint64_t differing = 0;
+    uint32_t minX = w, minY = h, maxX = 0, maxY = 0;
+    for (uint32_t y = 0; y < h; ++y)
+        for (uint32_t x = 0; x < w; ++x)
+        {
+            const size_t i = (static_cast<size_t>(y) * w + x) * 4;
+            if (std::memcmp(a + i, b + i, 4) != 0)
+            {
+                ++differing;
+                minX = std::min(minX, x), minY = std::min(minY, y), maxX = std::max(maxX, x), maxY = std::max(maxY, y);
+            }
+        }
+    fullPixels.unmap();
+    cachePixels.unmap();
+    ++state.uiCacheVerified;
+    if (differing > 0)
+    {
+        ++state.uiCacheVerifyFailures;
+        std::fprintf(stderr, "[UIDemo] verify-ui-cache: frame %u: %llu pixels differ from drawing everything (x %u..%u, y %u..%u)\n", state.frameNumber,
+                     static_cast<unsigned long long>(differing), minX, maxX, minY, maxY);
+    }
+}
+
 static void captureScreenshotIfRequested(AppState& state, const NoxUI_NoxRHIDrawData& drawData, nri::Extent2D extent)
 {
 #ifdef NOXUI_HAS_STB
@@ -564,8 +636,21 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
             state->uiCacheEnabled = false;
         else if (std::strcmp(argv[i], "--no-partial") == 0)
             state->partialFrames = false;
+        else if (std::strcmp(argv[i], "--no-partial-redraw") == 0)
+            state->partialRedraw = false;
+        else if (std::strcmp(argv[i], "--verify-ui-cache") == 0)
+            state->verifyCache = true;
+        else if (std::strcmp(argv[i], "--fixed-clock") == 0)
+            state->fixedClock = true;
         else if (std::strcmp(argv[i], "--no-viewports") == 0)
             state->enableViewports = false;
+    }
+
+    if (state->fixedClock)
+    {
+        static const AppState* s_ClockState = nullptr;
+        s_ClockState = state.get();
+        NoxUI::SetTimeSource([]() { return s_ClockState->fixedClockMs; });
     }
 
     if (!SDL_Init(SDL_INIT_VIDEO))
@@ -695,7 +780,13 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 
         const auto now = std::chrono::steady_clock::now();
         const double dtMs = std::chrono::duration<double, std::milli>(now - state->lastFrameTime).count();
-        const float dtSec = static_cast<float>(std::clamp(dtMs / 1000.0, 0.0001, 0.1));
+        float dtSec = static_cast<float>(std::clamp(dtMs / 1000.0, 0.0001, 0.1));
+        if (state->fixedClock)
+        {
+            // (a frame of 1/60 s, whatever it took: the animated values come out the same every run)
+            dtSec = 1.0f / 60.0f;
+            state->fixedClockMs = static_cast<uint64_t>(state->frameNumber) * 1000ull / 60ull;
+        }
         state->lastFrameTime = now;
         if (state->frameNumber > 0)
         {
@@ -874,6 +965,18 @@ SDL_AppResult SDL_AppIterate(void* appstate)
                               state->clearColor != state->uiCacheClear;
         if (redrawUi)
             ++state->uiCacheRedraws;
+        // Partial: the texture shows the list the UI context compares this frame with (GetDirtyBaseRevision), cleared to the same
+        // colour -- only the rects it changed are cleared and drawn again (--no-partial-redraw: all of it).
+        const bool partialUi = redrawUi && useUiCache && state->partialRedraw && state->uiCacheValid && state->clearColor == state->uiCacheClear &&
+                               !state->uiContext.IsDirtyFull() && state->uiContext.GetDirtyBaseRevision() == state->uiCacheRevision;
+        const std::vector<NoxUI::UIRect> dirtyRects = partialUi ? state->uiContext.GetDirtyRects() : std::vector<NoxUI::UIRect>{};
+        state->verifyCacheThisFrame = partialUi && state->verifyCache;
+        if (partialUi)
+        {
+            ++state->uiPartialRedraws;
+            for (const NoxUI::UIRect& r : dirtyRects)
+                state->uiPartialArea += static_cast<double>(r.Width()) * r.Height() / (static_cast<double>(extent.width) * extent.height);
+        }
 
         state->renderGraph.Reset({ state->frameNumber, extent, extent });
 
@@ -908,16 +1011,21 @@ SDL_AppResult SDL_AppIterate(void* appstate)
             {
                 // Over an opaque clear the UI pipeline's alpha (src + dst * (1 - src)) stays 1: the texture is opaque, and the
                 // quad below copies it to the swapchain as it would have been drawn there.
+                const std::array<float, 4> clear{ state->clearColor[0], state->clearColor[1], state->clearColor[2], 1.0f };
                 state->renderGraph.AddPass("NoxUIToCache", nri::RGPassFlags::Raster,
                     [&](nri::RGBuilder& b)
                     {
-                        b.ColorTarget(cache, NRI_LOAD_OP_CLEAR, NRI_STORE_OP_STORE,
-                                      { state->clearColor[0], state->clearColor[1], state->clearColor[2], 1.0f });
+                        b.ColorTarget(cache, partialUi ? NRI_LOAD_OP_LOAD : NRI_LOAD_OP_CLEAR, NRI_STORE_OP_STORE,
+                                      { clear[0], clear[1], clear[2], clear[3] });
                         b.SetRenderArea(extent, nri::RGViewport::None);
                     },
-                    [mainDrawData](nri::RGPassContext& ctx)
+                    [mainDrawData, partialUi, dirtyRects, clear](nri::RGPassContext& ctx)
                     {
-                        NoxUI_ImplNoxRHI_RenderDrawData(ctx.Cmd(), mainDrawData);
+                        if (partialUi)
+                            NoxUI_ImplNoxRHI_RenderDrawDataRects(ctx.Cmd(), mainDrawData, dirtyRects.data(), static_cast<uint32_t>(dirtyRects.size()),
+                                                                 clear.data());
+                        else
+                            NoxUI_ImplNoxRHI_RenderDrawData(ctx.Cmd(), mainDrawData);
                     });
                 state->uiCacheRevision = state->uiDrawList.GetRevision();
                 state->uiCacheClear = state->clearColor;
@@ -985,6 +1093,9 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 
         ++state->frameNumber;
 
+        if (state->verifyCacheThisFrame)
+            verifyUiCache(*state, mainDrawData, extent);
+
         if (!state->screenshotPath.empty() &&
             ((state->maxFrames > 0 && static_cast<int>(state->frameNumber) == state->maxFrames) ||
              (state->maxFrames < 0 && state->frameNumber == 3)))
@@ -1033,6 +1144,13 @@ void SDL_AppQuit(void* appstate, SDL_AppResult result)
                             static_cast<double>(state->partialCopied) / drawn);
             else if (!state->partialFrames)
                 std::printf("[UIDemo] partial frames off (--no-partial): drawn frames laid out and painted everything\n");
+            if (state->verifyCache)
+                std::printf("[UIDemo] verify-ui-cache: %llu partial redraws compared with drawing everything, %llu differed\n",
+                            static_cast<unsigned long long>(state->uiCacheVerified), static_cast<unsigned long long>(state->uiCacheVerifyFailures));
+            if (state->uiPartialRedraws > 0)
+                std::printf("[UIDemo] UI cache: %llu of %llu redraws only redrew what changed (%.1f%% of the window on average)\n",
+                            static_cast<unsigned long long>(state->uiPartialRedraws), static_cast<unsigned long long>(state->uiCacheRedraws),
+                            100.0 * state->uiPartialArea / static_cast<double>(state->uiPartialRedraws));
         }
         if (!g_traceCounts.empty())
         {

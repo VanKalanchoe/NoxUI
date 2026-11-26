@@ -194,6 +194,9 @@ namespace NoxUI
             uint64_t Generation = 0;
             bool Replay = true;
             uint32_t Painted = 0, Replayed = 0;
+            // The ranges copied from the old list, in the order they were appended (UIContext's dirty rects).
+            struct Segment { uint32_t NewFirst, OldFirst, Count; };
+            std::vector<Segment>* Segments = nullptr;
         };
         struct KeyContext
         {

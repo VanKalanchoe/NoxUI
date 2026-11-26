@@ -15,6 +15,8 @@
 #define NOXUI_HAS_VERIFY_MODE 1
 // (UIContext::SetLayoutCache / SetPaintCache and their counts)
 #define NOXUI_HAS_PARTIAL_FRAMES 1
+// (UIContext::GetDirtyRects)
+#define NOXUI_HAS_DIRTY_RECTS 1
 
 namespace NoxUI
 {
@@ -107,6 +109,14 @@ namespace NoxUI
         bool IsLayoutCacheEnabled() const { return m_LayoutCache; }
         void SetPaintCache(bool enabled) { m_PaintCache = enabled; }
         bool IsPaintCacheEnabled() const { return m_PaintCache; }
+        // Partial redraw, for a backend that keeps the UI's pixels (UIDemo's UI cache): the parts of the viewport the last drawn frame
+        // changed, compared with the frame drawn before it -- whose list had revision GetDirtyBaseRevision(). A backend whose pixels show
+        // the list at that revision redraws only these rects (clears each and draws the list scissored to it); otherwise, or when
+        // IsDirtyFull() (no paint cache, a new viewport, children reordered, half the viewport or more changed), all of it. An idle frame
+        // leaves them as they are (and the list's revision too: nothing to redraw). Rects in whole pixels, disjoint, at most 16.
+        const std::vector<UIRect>& GetDirtyRects() const { return m_DirtyRects; }
+        bool IsDirtyFull() const { return m_DirtyFull; }
+        uint64_t GetDirtyBaseRevision() const { return m_DirtyBaseRevision; }
         // The last drawn frame: elements measured and arranged (not reused), elements painted, and elements copied from the frame
         // before (each with everything inside it).
         uint32_t GetLastMeasuredCount() const { return m_LastMeasured; }
@@ -239,6 +249,14 @@ namespace NoxUI
         bool m_PaintCache = true;
         UIDrawList m_PreviousList;
         uint64_t m_PaintGeneration = 0;
+        // Dirty rects (GetDirtyRects): the ranges the paint copied, the primitives the trees drew last frame (the rest is the
+        // context's: tooltip, drag, toasts).
+        void UpdateDirtyRects(const UIDrawList& drawList, bool haveBase, uint32_t treePrimCount);
+        std::vector<UIElement::PaintPass::Segment> m_DirtySegments;
+        std::vector<UIRect> m_DirtyRects;
+        bool m_DirtyFull = true;
+        uint64_t m_DirtyBaseRevision = 0;
+        uint32_t m_LastTreePrimCount = 0;
         uint32_t m_LastMeasured = 0;
         uint32_t m_LastArranged = 0;
         uint32_t m_LastPainted = 0;

@@ -689,7 +689,12 @@ namespace NoxUI
 
         // Last frame's list for the paint records: `drawList` holds it when nothing changed it since; otherwise none can be read.
         static std::atomic<uint64_t> s_NextPaintGeneration{ 1 };
-        if (paintCache && m_PaintGeneration != 0 && &drawList == m_LastOutputList && drawList.GetRevision() == m_LastOutputRevision)
+        // (the dirty rects compare this frame with the list drawn last, at the revision it was left with)
+        const uint64_t baseRevision = m_LastOutputRevision;
+        const bool haveBase = paintCache && m_PaintGeneration != 0 && &drawList == m_LastOutputList && drawList.GetRevision() == m_LastOutputRevision &&
+                              drawList.GetViewportSize() == glm::max(viewportSize, glm::vec2(1.0f));
+        m_DirtySegments.clear();
+        if (haveBase)
             m_PreviousList.SwapContents(drawList);
         else
         {
@@ -733,6 +738,7 @@ namespace NoxUI
             pass.Old = &m_PreviousList;
             pass.Theme = m_Theme.get();
             pass.Generation = m_PaintGeneration;
+            pass.Segments = &m_DirtySegments;
             // (a drag in flight: elements paint from the pointer and the payload -- nothing is copied while it lasts)
             pass.Replay = !m_DragActive;
             m_Root->PaintCached(pass, 0, 0, 0, true, 0, 0, 0);
@@ -779,6 +785,7 @@ namespace NoxUI
             m_LastReplayed = 0;
         }
 
+        const uint32_t treePrimCount = static_cast<uint32_t>(drawList.GetPrimitives().size()); // (then what the context draws on top)
         AdvanceHoverTime(dt);
         if (m_Hovered && !m_Captured)
         {
@@ -867,6 +874,9 @@ namespace NoxUI
 
         PaintToasts(drawList, viewportSize, dt);
 
+        UpdateDirtyRects(drawList, haveBase, treePrimCount);
+        m_DirtyBaseRevision = baseRevision;
+        m_LastTreePrimCount = treePrimCount;
         m_LastOutputList = &drawList;
         m_LastOutputRevision = drawList.GetRevision();
 
@@ -895,6 +905,139 @@ namespace NoxUI
                                                 (!sameState ? "; the fingerprint changed during the frame" : "") + ")");
             }
         }
+    }
+
+    void UIContext::UpdateDirtyRects(const UIDrawList& drawList, bool haveBase, uint32_t treePrimCount)
+    {
+        // What changed between last frame's list (m_PreviousList) and this one, in pixels. Elements copied from the last frame are
+        // the same primitives under the same clips in the same order (UIElement::PaintCached): a pixel that only they touch, in both
+        // lists, keeps its colour. Every other primitive -- painted this frame, or in the last frame's list and gone -- marks what it
+        // can change (UIDrawList::PrimitiveExtent). What the context draws on top (tooltip, drag, toasts) is compared as a whole.
+        m_DirtyRects.clear();
+        m_DirtyFull = true;
+        if (!haveBase)
+            return;
+        const UIDrawList& old = m_PreviousList;
+        const auto& prims = drawList.GetPrimitives();
+        const auto& clips = drawList.GetClipRects();
+        const auto& oldPrims = old.GetPrimitives();
+        const auto& oldClips = old.GetClipRects();
+        const uint32_t oldTreeEnd = std::min<uint32_t>(m_LastTreePrimCount, static_cast<uint32_t>(oldPrims.size()));
+
+        std::vector<UIRect> rects;
+        const auto mark = [&rects](const UIPrimitive& prim, const std::vector<UIClipRect>& clipRects)
+        {
+            if (prim.clipIndex >= clipRects.size())
+                return;
+            const UIRect extent = UIDrawList::PrimitiveExtent(prim, clipRects[prim.clipIndex]);
+            if (extent.Max.x > extent.Min.x && extent.Max.y > extent.Min.y)
+                rects.push_back(extent);
+        };
+        // The same primitive: every byte but the clip index, and the clip it names has the same rect.
+        const auto same = [&](const UIPrimitive& a, const UIPrimitive& b)
+        {
+            if (a.clipIndex >= clips.size() || b.clipIndex >= oldClips.size() ||
+                std::memcmp(&clips[a.clipIndex], &oldClips[b.clipIndex], sizeof(UIClipRect)) != 0)
+                return false;
+            UIPrimitive x = a, y = b;
+            x.clipIndex = y.clipIndex = 0;
+            return std::memcmp(&x, &y, sizeof(UIPrimitive)) == 0;
+        };
+        // A run painted this frame against the run it replaces: what it begins and ends with unchanged (the backgrounds of the
+        // containers around a changed element, painted again as they were) changes no pixel -- the order of everything else is as it
+        // was. The rest, then and now, marks what it can change.
+        const auto markRun = [&](uint32_t first, uint32_t end, uint32_t oldFirst, uint32_t oldEnd)
+        {
+            while (first < end && oldFirst < oldEnd && same(prims[first], oldPrims[oldFirst]))
+                ++first, ++oldFirst;
+            while (first < end && oldFirst < oldEnd && same(prims[end - 1], oldPrims[oldEnd - 1]))
+                --end, --oldEnd;
+            for (uint32_t i = first; i < end; ++i)
+                mark(prims[i], clips);
+            for (uint32_t i = oldFirst; i < oldEnd; ++i)
+                mark(oldPrims[i], oldClips);
+        };
+        uint32_t cursor = 0, oldCursor = 0;
+        for (const UIElement::PaintPass::Segment& segment : m_DirtySegments)
+        {
+            if (segment.OldFirst < oldCursor || segment.OldFirst + segment.Count > oldTreeEnd)
+                return; // (copied out of their old order -- children reordered: their stacking changed; drawn in full)
+            markRun(cursor, segment.NewFirst, oldCursor, segment.OldFirst);
+            cursor = segment.NewFirst + segment.Count;
+            oldCursor = segment.OldFirst + segment.Count;
+        }
+        markRun(cursor, treePrimCount, oldCursor, oldTreeEnd);
+        // (on top -- tooltip, drag, toasts -- the same way)
+        markRun(treePrimCount, static_cast<uint32_t>(prims.size()), oldTreeEnd, static_cast<uint32_t>(oldPrims.size()));
+
+        // A few rects: each joins the one it grows least (an overlapping one first) once there are kMaxDirtyRects; half the viewport
+        // or more is drawn in full.
+        constexpr size_t kMaxDirtyRects = 16;
+        const auto area = [](const UIRect& r) { return (r.Max.x - r.Min.x) * (r.Max.y - r.Min.y); };
+        const auto unite = [](const UIRect& a, const UIRect& b) { return UIRect{ glm::min(a.Min, b.Min), glm::max(a.Max, b.Max) }; };
+        const auto overlaps = [](const UIRect& a, const UIRect& b)
+        { return a.Min.x <= b.Max.x && b.Min.x <= a.Max.x && a.Min.y <= b.Max.y && b.Min.y <= a.Max.y; };
+        for (const UIRect& rect : rects)
+        {
+            UIRect merged = rect;
+            // (absorb every rect it touches, again until none: the list stays disjoint)
+            for (bool again = true; again;)
+            {
+                again = false;
+                for (size_t i = 0; i < m_DirtyRects.size(); ++i)
+                {
+                    if (overlaps(m_DirtyRects[i], merged))
+                    {
+                        merged = unite(merged, m_DirtyRects[i]);
+                        m_DirtyRects[i] = m_DirtyRects.back();
+                        m_DirtyRects.pop_back();
+                        again = true;
+                        break;
+                    }
+                }
+            }
+            if (m_DirtyRects.size() < kMaxDirtyRects)
+            {
+                m_DirtyRects.push_back(merged);
+                continue;
+            }
+            size_t best = 0;
+            float bestGrowth = 0.0f;
+            for (size_t i = 0; i < m_DirtyRects.size(); ++i)
+            {
+                const float growth = area(unite(m_DirtyRects[i], merged)) - area(m_DirtyRects[i]);
+                if (i == 0 || growth < bestGrowth)
+                {
+                    best = i;
+                    bestGrowth = growth;
+                }
+            }
+            m_DirtyRects[best] = unite(m_DirtyRects[best], merged);
+        }
+        // (a rect grown at the cap may reach others: joined until they are disjoint)
+        for (bool again = true; again;)
+        {
+            again = false;
+            for (size_t i = 0; i < m_DirtyRects.size() && !again; ++i)
+                for (size_t j = i + 1; j < m_DirtyRects.size() && !again; ++j)
+                    if (overlaps(m_DirtyRects[i], m_DirtyRects[j]))
+                    {
+                        m_DirtyRects[i] = unite(m_DirtyRects[i], m_DirtyRects[j]);
+                        m_DirtyRects[j] = m_DirtyRects.back();
+                        m_DirtyRects.pop_back();
+                        again = true;
+                    }
+        }
+        float total = 0.0f;
+        for (const UIRect& rect : m_DirtyRects)
+            total += area(rect);
+        const glm::vec2 viewport = drawList.GetViewportSize();
+        if (total >= 0.5f * viewport.x * viewport.y)
+        {
+            m_DirtyRects.clear();
+            return;
+        }
+        m_DirtyFull = false;
     }
 
     void UIContext::AdvanceHoverTime(float dt)

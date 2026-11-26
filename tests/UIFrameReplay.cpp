@@ -18,7 +18,9 @@
 #include <NoxUI/Layout/UITabPanel.h>
 #include <NoxUI/Rendering/UIGlyphCache.h>
 
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -182,6 +184,41 @@ int main(int argc, char** argv)
     const UIKey keys[] = { UIKey::Left, UIKey::Right, UIKey::Up, UIKey::Down, UIKey::Tab, UIKey::Return, UIKey::Backspace, UIKey::Home,
                            UIKey::End, UIKey::Space, UIKey::Delete, UIKey::PageDown };
 
+#if defined(NOXUI_HAS_DIRTY_RECTS)
+    // --verify: a frame with dirty rects is checked against the one before -- at every second pixel outside them, the primitives that
+    // can change the pixel (UIDrawList::PrimitiveExtent), in order, with their clip rects, must be the ones of the frame before: a
+    // backend redrawing only the rects shows what drawing everything would.
+    UIDrawList previousList;
+    uint64_t previousRevision = 0;
+    uint64_t dirtyFrames = 0, dirtyChecked = 0, dirtyFailures = 0;
+    double dirtyArea = 0.0;
+    std::vector<uint64_t> gridNow, gridBefore;
+    const auto coverage = [](const UIDrawList& list, std::vector<uint64_t>& grid, int gw, int gh)
+    {
+        grid.assign(static_cast<size_t>(gw) * gh, 0x9E3779B97F4A7C15ull);
+        const auto& clips = list.GetClipRects();
+        for (const UIPrimitive& prim : list.GetPrimitives())
+        {
+            if (prim.clipIndex >= clips.size())
+                continue;
+            const UIRect e = UIDrawList::PrimitiveExtent(prim, clips[prim.clipIndex]);
+            UIPrimitive bare = prim;
+            bare.clipIndex = 0;
+            const uint64_t h = Hash(&clips[prim.clipIndex], sizeof(UIClipRect), Hash(&bare, sizeof(bare), 1469598103934665603ull));
+            // (sample points at pixel centres 2x+0.5, 2y+0.5)
+            const int x0 = std::max(0, static_cast<int>(std::ceil((e.Min.x - 0.5f) / 2.0f)));
+            const int y0 = std::max(0, static_cast<int>(std::ceil((e.Min.y - 0.5f) / 2.0f)));
+            const int x1 = std::min(gw, static_cast<int>(std::ceil((e.Max.x - 0.5f) / 2.0f)));
+            const int y1 = std::min(gh, static_cast<int>(std::ceil((e.Max.y - 0.5f) / 2.0f)));
+            for (int y = y0; y < y1; ++y)
+                for (int x = x0; x < x1; ++x)
+                {
+                    uint64_t& g = grid[static_cast<size_t>(y) * gw + x];
+                    g = (g ^ h) * 0x100000001B3ull;
+                }
+        }
+    };
+#endif
     double clockSeconds = 0.0;
     uint64_t drawnFrames = 0, measured = 0, arranged = 0, painted = 0, replayed = 0;
     for (frameNumber = 0; frameNumber < frames; ++frameNumber)
@@ -251,6 +288,44 @@ int main(int argc, char** argv)
             totalMs += ms;
             worstMs = std::max(worstMs, ms);
         }
+#if defined(NOXUI_HAS_DIRTY_RECTS)
+        if (!context.WasLastFrameSkipped() && !context.IsDirtyFull() && context.GetDirtyBaseRevision() == previousRevision &&
+            previousList.GetViewportSize() == drawList.GetViewportSize())
+        {
+            ++dirtyFrames;
+            for (const UIRect& r : context.GetDirtyRects())
+                dirtyArea += static_cast<double>(r.Width()) * r.Height() / (static_cast<double>(drawList.GetViewportSize().x) * drawList.GetViewportSize().y);
+            if (verify)
+            {
+                ++dirtyChecked;
+                const int gw = static_cast<int>(drawList.GetViewportSize().x) / 2, gh = static_cast<int>(drawList.GetViewportSize().y) / 2;
+                coverage(drawList, gridNow, gw, gh);
+                coverage(previousList, gridBefore, gw, gh);
+                int bad = 0;
+                for (int y = 0; y < gh && !bad; ++y)
+                    for (int x = 0; x < gw; ++x)
+                    {
+                        const UIVec2 p{ 2.0f * x + 0.5f, 2.0f * y + 0.5f };
+                        bool inside = false;
+                        for (const UIRect& r : context.GetDirtyRects())
+                            inside = inside || (p.x >= r.Min.x && p.x < r.Max.x && p.y >= r.Min.y && p.y < r.Max.y);
+                        if (!inside && gridNow[static_cast<size_t>(y) * gw + x] != gridBefore[static_cast<size_t>(y) * gw + x])
+                        {
+                            if (++dirtyFailures <= 5)
+                                std::fprintf(stderr, "[UIFrameReplay] frame %d: pixel (%.1f, %.1f) changed outside the %zu dirty rects\n", frameNumber, p.x, p.y,
+                                             context.GetDirtyRects().size());
+                            bad = 1;
+                            break;
+                        }
+                    }
+            }
+        }
+        if (!context.WasLastFrameSkipped())
+        {
+            previousList = drawList;
+            previousRevision = drawList.GetRevision();
+        }
+#endif
 #if defined(NOXUI_HAS_PARTIAL_FRAMES)
         if (!context.WasLastFrameSkipped())
         {
@@ -288,6 +363,14 @@ int main(int argc, char** argv)
     std::printf("[UIFrameReplay] %d frames (seed %u): UpdateAndRender avg %.3f ms, worst %.3f ms; primitives drawn: %zu rects, %zu glyphs, "
                 "%zu MSDF glyphs, %zu curves, %zu images\n", frames, seed, totalMs / std::max(1, frames - 30), worstMs, primitivesByType[0],
                 primitivesByType[4], primitivesByType[2], primitivesByType[3], primitivesByType[1]);
+#if defined(NOXUI_HAS_DIRTY_RECTS)
+    if (dirtyFrames > 0)
+        std::printf("[UIFrameReplay] dirty rects: %llu drawn frames redraw only part of the viewport (%.1f%% of it on average)%s\n",
+                    static_cast<unsigned long long>(dirtyFrames), 100.0 * dirtyArea / static_cast<double>(dirtyFrames),
+                    verify ? (dirtyFailures ? "; FAILED: pixels changed outside them" : "; checked: nothing changed outside them") : "");
+    if (verify && dirtyFailures > 0)
+        return 1;
+#endif
 #if defined(NOXUI_HAS_VERIFY_MODE)
     std::printf("[UIFrameReplay] idle frames skipped: %llu of %d", static_cast<unsigned long long>(context.GetSkippedFrameCount()), frames);
     if (verify)

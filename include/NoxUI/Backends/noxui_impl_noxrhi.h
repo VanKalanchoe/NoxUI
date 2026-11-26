@@ -4,6 +4,7 @@
 // Modeled directly on NoxRHI's imgui_impl_noxrhi.h.
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -808,7 +809,20 @@ inline void NoxUI_ImplNoxRHI_CopyData(nri::CommandBuffer& cmd, const NoxUI_NoxRH
     cmd.executionBarrier();
 }
 
+inline void NoxUI_ImplNoxRHI_RenderDrawDataRects(nri::CommandBuffer& cmd, const NoxUI_NoxRHIDrawData& drawData, const NoxUI::UIRect* rects,
+                                                 uint32_t rectCount, const float clearColor[4], uint32_t colorAttachmentIndex = 0);
+
 inline void NoxUI_ImplNoxRHI_RenderDrawData(nri::CommandBuffer& cmd, const NoxUI_NoxRHIDrawData& drawData)
+{
+    NoxUI_ImplNoxRHI_RenderDrawDataRects(cmd, drawData, nullptr, 0, nullptr);
+}
+
+// Partial redraw into a target that holds the draw list of the frame before (UIContext::GetDirtyRects, at GetDirtyBaseRevision): each
+// rect of the target is cleared to `clearColor` (the colour the target was cleared to when drawn in full) and the whole list is drawn
+// scissored to it -- the pixels come out as drawing everything over that clear gives, and the rest of the target is left as it is.
+// Called inside the rendering of that target (load op load); `colorAttachmentIndex` is its index there. No rects: everything, unclipped.
+inline void NoxUI_ImplNoxRHI_RenderDrawDataRects(nri::CommandBuffer& cmd, const NoxUI_NoxRHIDrawData& drawData, const NoxUI::UIRect* rects,
+                                                 uint32_t rectCount, const float clearColor[4], uint32_t colorAttachmentIndex)
 {
     auto* bd = NoxUI::Detail::GetBackendDataPtr();
     if (!bd || drawData.primitiveCount == 0)
@@ -849,7 +863,29 @@ inline void NoxUI_ImplNoxRHI_RenderDrawData(nri::CommandBuffer& cmd, const NoxUI
     pc.linearColorOutput = bd->linearColorOutput ? 1u : 0u;
 
     cmd.pushData(&pc, sizeof(pc));
-    cmd.draw(geom.activePrimCount * 6u, 1u, 0u, 0u);
+    if (rectCount == 0 || !rects)
+    {
+        cmd.draw(geom.activePrimCount * 6u, 1u, 0u, 0u);
+        return;
+    }
+    // (whole pixels inside the target)
+    std::vector<NriRect2D> scissors;
+    scissors.reserve(rectCount);
+    for (uint32_t i = 0; i < rectCount; ++i)
+    {
+        const float x0 = std::clamp(std::floor(rects[i].Min.x), 0.0f, fbWidth), y0 = std::clamp(std::floor(rects[i].Min.y), 0.0f, fbHeight);
+        const float x1 = std::clamp(std::ceil(rects[i].Max.x), 0.0f, fbWidth), y1 = std::clamp(std::ceil(rects[i].Max.y), 0.0f, fbHeight);
+        if (x1 > x0 && y1 > y0)
+            scissors.push_back(NriRect2D{ static_cast<int32_t>(x0), static_cast<int32_t>(y0), static_cast<uint32_t>(x1 - x0), static_cast<uint32_t>(y1 - y0) });
+    }
+    if (scissors.empty())
+        return;
+    cmd.clearColorRects(colorAttachmentIndex, nri::ClearColor{ clearColor[0], clearColor[1], clearColor[2], clearColor[3] }, scissors);
+    for (const NriRect2D& scissor : scissors)
+    {
+        cmd.setScissorRect(scissor.x, scissor.y, scissor.width, scissor.height);
+        cmd.draw(geom.activePrimCount * 6u, 1u, 0u, 0u);
+    }
 }
 
 inline bool NoxUI_ImplNoxRHI_Init(const NoxUI_ImplNoxRHI_InitInfo& info)
