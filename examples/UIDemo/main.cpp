@@ -295,7 +295,8 @@ namespace
         bool verifyCache = false;    // (--verify-ui-cache: each partial redraw compared with drawing everything; slow)
         bool fixedClock = false;     // (--fixed-clock: the UI's clock and frame time advance 1/60 s a frame, whatever the real time)
         uint64_t fixedClockMs = 0;
-        uint64_t uiCacheVerified = 0, uiCacheVerifyFailures = 0;
+        uint64_t uiCacheVerified = 0, uiCacheVerifyFailures = 0, uiCompositeVerifyFailures = 0;
+        NoxUI_NoxRHIDrawData lastCompositeData{}; // (the composite's draw data, for --verify-ui-cache)
         bool verifyCacheThisFrame = false;
         uint64_t uiPartialRedraws = 0;
         double uiPartialArea = 0.0;
@@ -484,7 +485,7 @@ static void shutdownNoxUI(AppState& state)
 
 // --verify-ui-cache: after a partial redraw of the UI cache, the whole list is drawn into a texture of its own (cleared to the same
 // colour) and both are read back -- they must be the same, byte for byte (what redrawing only the dirty rects promises).
-static void verifyUiCache(AppState& state, const NoxUI_NoxRHIDrawData& drawData, nri::Extent2D extent)
+static void verifyUiCache(AppState& state, const NoxUI_NoxRHIDrawData& drawData, const NoxUI_NoxRHIDrawData& compositeData, nri::Extent2D extent)
 {
     const uint32_t w = extent.width >= 64u ? (extent.width & ~63u) : extent.width; // (256-byte rows for D3D12's copy)
     const uint32_t h = extent.height;
@@ -496,6 +497,11 @@ static void verifyUiCache(AppState& state, const NoxUI_NoxRHIDrawData& drawData,
     const uint64_t bytes = static_cast<uint64_t>(w) * h * 4ull;
     nri::Buffer fullPixels = state.device.createBuffer({ .size = bytes, .usage = NRI_BUFFER_USAGE_READBACK });
     nri::Buffer cachePixels = state.device.createBuffer({ .size = bytes, .usage = NRI_BUFFER_USAGE_READBACK });
+    // (and the composite -- the cache through the swapchain's quad, which no clear precedes -- drawn over magenta: it must give the cache
+    // back exactly, every pixel covered and nothing of what was there blended in)
+    nri::Texture composited = state.device.createTexture({ .width = w, .height = h, .arrayLayers = 1, .mipLevels = 1, .sampleCount = 1,
+                                                           .usage = NRI_TEXTURE_USAGE_COLOR_ATTACHMENT, .format = NRI_FORMAT_SURFACE });
+    nri::Buffer compositedPixels = state.device.createBuffer({ .size = bytes, .usage = NRI_BUFFER_USAGE_READBACK });
     nri::CommandAllocator alloc = state.device.createCommandAllocator(NRI_COMMAND_BUFFER_RESET_WITH_ALLOCATOR, NRI_QUEUE_GRAPHICS);
     nri::CommandBuffer cmd = alloc.allocateCommandBuffer(1);
     cmd.begin(0, true);
@@ -506,6 +512,13 @@ static void verifyUiCache(AppState& state, const NoxUI_NoxRHIDrawData& drawData,
     cmd.beginRendering(renderDesc);
     NoxUI_ImplNoxRHI_RenderDrawData(cmd, drawData);
     cmd.endRendering();
+    NoxUI_ImplNoxRHI_CopyData(cmd, compositeData);
+    const nri::RenderAttachDesc magentaAttach{ .attachment = composited.handle(), .loadOp = NRI_LOAD_OP_CLEAR, .storeOp = NRI_STORE_OP_STORE,
+                                               .clearColor = { 1.0f, 0.0f, 1.0f, 1.0f } };
+    const nri::RenderDesc compositeDesc{ .renderArea = { w, h }, .colorAttachments = { magentaAttach }, .isSwapchainPass = false };
+    cmd.beginRendering(compositeDesc);
+    NoxUI_ImplNoxRHI_RenderDrawData(cmd, compositeData);
+    cmd.endRendering();
     // (the cache was last sampled by the composite: read for the copy, then left as the render graph expects it)
     const nri::TextureBarrierDesc toCopy[] = { { .texture = state.uiCache.handle(),
                                                  .before = { nri::AccessBits::ShaderRead, nri::StageBits::Fragment },
@@ -514,6 +527,7 @@ static void verifyUiCache(AppState& state, const NoxUI_NoxRHIDrawData& drawData,
     cmd.executionBarrier();
     full.copyToBuffer(cmd.handle(), fullPixels.handle(), 0, 0, w, h);
     state.uiCache.copyToBuffer(cmd.handle(), cachePixels.handle(), 0, 0, w, h);
+    composited.copyToBuffer(cmd.handle(), compositedPixels.handle(), 0, 0, w, h);
     const nri::TextureBarrierDesc back[] = { { .texture = state.uiCache.handle(),
                                                .before = { nri::AccessBits::TransferRead, nri::StageBits::Transfer },
                                                .after = { nri::AccessBits::ShaderRead, nri::StageBits::Fragment } } };
@@ -535,9 +549,21 @@ static void verifyUiCache(AppState& state, const NoxUI_NoxRHIDrawData& drawData,
                 minX = std::min(minX, x), minY = std::min(minY, y), maxX = std::max(maxX, x), maxY = std::max(maxY, y);
             }
         }
+    const auto* c = static_cast<const uint8_t*>(compositedPixels.map(0, bytes));
+    uint64_t compositeDiffering = 0;
+    for (uint64_t i = 0; i < bytes; i += 4)
+        if (std::memcmp(b + i, c + i, 4) != 0)
+            ++compositeDiffering;
+    compositedPixels.unmap();
     fullPixels.unmap();
     cachePixels.unmap();
     ++state.uiCacheVerified;
+    if (compositeDiffering > 0)
+    {
+        ++state.uiCompositeVerifyFailures;
+        std::fprintf(stderr, "[UIDemo] verify-ui-cache: frame %u: the composite (no clear before it) differs from the cache in %llu pixels\n",
+                     state.frameNumber, static_cast<unsigned long long>(compositeDiffering));
+    }
     if (differing > 0)
     {
         ++state.uiCacheVerifyFailures;
@@ -1090,12 +1116,18 @@ SDL_AppResult SDL_AppIterate(void* appstate)
                 state->uiCacheValid = true;
             }
 
-            // The texture on the swapchain: one textured quad over the whole target, through the same pipeline.
+            // The texture on the swapchain: one textured quad over the whole target, through the same pipeline. The quad reaches 2
+            // pixels past every edge (its UVs as far past 0 and 1, so each pixel samples the same texel): every pixel of the target is
+            // deep inside it, where its edge mask is 1 -- the opaque texture covers every pixel exactly, and the target needs no clear.
+            // (Clearing a D3D12 back buffer writes all of it -- it has no optimized clear value -- and the quad wrote it again.)
             const glm::vec2 size{ static_cast<float>(extent.width), static_cast<float>(extent.height) };
+            constexpr float kOverscan = 2.0f;
             state->uiCompositeList.Clear(size);
-            state->uiCompositeList.AddTexturedQuad({ 0.0f, 0.0f }, size, static_cast<NoxUI::UITextureID>(state->uiCacheSlot));
+            state->uiCompositeList.AddTexturedQuad(glm::vec2(-kOverscan), size + kOverscan, static_cast<NoxUI::UITextureID>(state->uiCacheSlot),
+                                                   glm::vec2(-kOverscan) / size, glm::vec2(1.0f) + glm::vec2(kOverscan) / size);
             constexpr uint32_t kCompositeViewportSlot = 0x7FFFFFFFu; // (its own geometry buffers in the backend)
             const NoxUI_NoxRHIDrawData compositeData = NoxUI_ImplNoxRHI_PrepareDrawData(state->uiCompositeList, frameSlot, kCompositeViewportSlot);
+            state->lastCompositeData = compositeData;
             state->renderGraph.AddPass("NoxUICompositeUpload", nri::RGPassFlags::NeverCull,
                 [](nri::RGBuilder&) {},
                 [compositeData](nri::RGPassContext& ctx)
@@ -1106,8 +1138,7 @@ SDL_AppResult SDL_AppIterate(void* appstate)
                 [&](nri::RGBuilder& b)
                 {
                     b.Read(cache, nri::RGTextureAccess::Sampled);
-                    b.SwapchainTarget(state->swapchain, imageIndex, NRI_LOAD_OP_CLEAR, NRI_STORE_OP_STORE,
-                                      { state->clearColor[0], state->clearColor[1], state->clearColor[2], 1.0f });
+                    b.SwapchainTarget(state->swapchain, imageIndex, NRI_LOAD_OP_DONT_CARE, NRI_STORE_OP_STORE, {}); // (the quad covers it)
                     b.SetRenderArea(extent, nri::RGViewport::None);
                 },
                 [compositeData](nri::RGPassContext& ctx)
@@ -1167,7 +1198,7 @@ SDL_AppResult SDL_AppIterate(void* appstate)
         ++state->frameNumber;
 
         if (state->verifyCacheThisFrame)
-            verifyUiCache(*state, mainDrawData, extent);
+            verifyUiCache(*state, mainDrawData, state->lastCompositeData, extent);
 
         if (!state->screenshotPath.empty() &&
             ((state->maxFrames > 0 && static_cast<int>(state->frameNumber) == state->maxFrames) ||
@@ -1258,9 +1289,10 @@ void SDL_AppQuit(void* appstate, SDL_AppResult result)
             else if (!state->partialRedraw)
                 line("UI cache: partial redraw off (--no-partial-redraw)");
             if (state->verifyCache)
-                line("verify-ui-cache: %llu partial redraws compared with drawing everything, %llu differed%s",
-                     static_cast<unsigned long long>(state->uiCacheVerified), static_cast<unsigned long long>(state->uiCacheVerifyFailures),
-                     state->uiCacheVerifyFailures ? " -- FAILED (the frames and pixels are above)" : "");
+                line("verify-ui-cache: %llu partial redraws compared with drawing everything, %llu differed; the composite (no clear) differed from "
+                     "the cache in %llu%s", static_cast<unsigned long long>(state->uiCacheVerified),
+                     static_cast<unsigned long long>(state->uiCacheVerifyFailures), static_cast<unsigned long long>(state->uiCompositeVerifyFailures),
+                     (state->uiCacheVerifyFailures + state->uiCompositeVerifyFailures) ? " -- FAILED (the frames and pixels are above)" : "");
             const ProfilerState& ps = state->profilerState;
             if (ps.frameCount > 0)
             {

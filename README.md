@@ -209,7 +209,9 @@ written to `UIDemo-summary.txt` in the working directory -- one file to send.
 **The UI cache (UIDemo).** The UI is drawn into a texture of its own only when its draw list changed (`UIDrawList::GetRevision`, which an
 idle `UpdateAndRender` leaves as it was); other frames show that texture with one full-screen textured quad through the same pipeline.
 Over an opaque clear the pipeline's alpha (`src + dst * (1 - src)`) stays 1, so the texture is opaque and the quad reproduces what drawing
-to the swapchain gave. The telemetry readouts change four times a second (every frame, their text alone kept every frame from being idle).
+to the swapchain gave. The quad reaches 2 pixels past every edge (its UVs as far past 0 and 1), so every pixel is deep inside it and
+covered exactly: the swapchain is not cleared first (a D3D12 back buffer has no optimized clear value, so its clear wrote the whole
+target, and the quad wrote it again). `--verify-ui-cache` also draws the composite over magenta and compares it with the cache. The telemetry readouts change four times a second (every frame, their text alone kept every frame from being idle).
 
 ---
 
