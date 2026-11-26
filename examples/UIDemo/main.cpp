@@ -270,6 +270,10 @@ namespace
         // (--tearing, without vsync: frames shown as they finish, tearing allowed -- Vulkan IMMEDIATE, D3D12 DXGI_PRESENT_ALLOW_TEARING;
         // without it Vulkan presents MAILBOX and D3D12 Present(0, 0), which in a window waits for the desktop compositor)
         bool tearing = false;
+        // (--fullscreen, or F11 at any time: borderless fullscreen on the window's display. Covering the whole monitor, a D3D12
+        // swapchain is flipped straight to the display instead of composed by the desktop -- with --tearing, frames are no longer held
+        // to the monitor's refresh rate)
+        bool fullscreen = false;
         bool resizeTest = false;
         bool minimizeTest = false;
         bool enableViewports = true;
@@ -646,6 +650,8 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
             state->vsync = true;
         else if (std::strcmp(argv[i], "--tearing") == 0)
             state->tearing = true;
+        else if (std::strcmp(argv[i], "--fullscreen") == 0)
+            state->fullscreen = true;
         else if (std::strcmp(argv[i], "--vk") == 0 || std::strcmp(argv[i], "--vulkan") == 0)
             state->api = NRI_GRAPHICS_API_VULKAN;
         else if (std::strcmp(argv[i], "--dx12") == 0 || std::strcmp(argv[i], "--d3d12") == 0)
@@ -691,12 +697,15 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
         return SDL_APP_FAILURE;
     }
 
-    state->window = SDL_CreateWindow("NoxUI Demo Gallery (NoxRHI Backend)", state->width, state->height, SDL_WINDOW_RESIZABLE);
+    state->window = SDL_CreateWindow("NoxUI Demo Gallery (NoxRHI Backend)", state->width, state->height,
+                                     SDL_WINDOW_RESIZABLE | (state->fullscreen ? SDL_WINDOW_FULLSCREEN : 0));
     if (!state->window)
     {
         std::fprintf(stderr, "SDL_CreateWindow failed: %s\n", SDL_GetError());
         return SDL_APP_FAILURE;
     }
+    if (state->fullscreen) // (borderless: SDL's fullscreen without a display mode -- the desktop's resolution, no mode switch)
+        SDL_GetWindowSizeInPixels(state->window, &state->width, &state->height);
 
     try
     {
@@ -781,6 +790,13 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
     if (event->type == SDL_EVENT_WINDOW_CLOSE_REQUESTED &&
         event->window.windowID == SDL_GetWindowID(state->window))
         return SDL_APP_SUCCESS;
+    if (event->type == SDL_EVENT_KEY_DOWN && event->key.key == SDLK_F11 && !event->key.repeat &&
+        event->key.windowID == SDL_GetWindowID(state->window))
+    {
+        // (borderless fullscreen and back; the resize events that follow recreate the swapchain)
+        state->fullscreen = !state->fullscreen;
+        SDL_SetWindowFullscreen(state->window, state->fullscreen);
+    }
     if ((event->type == SDL_EVENT_WINDOW_RESIZED || event->type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED || event->type == SDL_EVENT_WINDOW_RESTORED) &&
         event->window.windowID == SDL_GetWindowID(state->window))
     {
@@ -1210,7 +1226,7 @@ void SDL_AppQuit(void* appstate, SDL_AppResult result)
         const char* api = state->api == NRI_GRAPHICS_API_VULKAN ? "Vulkan" : state->api == NRI_GRAPHICS_API_D3D12 ? "D3D12" : "None (no GPU)";
         line("==== summary ====");
         line("command line:%s", state->commandLine.c_str());
-        line("API %s, window %dx%d, %u frames in %.1f s (%.0f FPS, %.3f ms a frame), present: %s", api, state->width, state->height, state->frameNumber,
+        line("API %s, %s %dx%d, %u frames in %.1f s (%.0f FPS, %.3f ms a frame), present: %s", api, state->fullscreen ? "borderless fullscreen" : "window", state->width, state->height, state->frameNumber,
              seconds, seconds > 0.0 ? state->frameNumber / seconds : 0.0, state->frameNumber ? 1000.0 * seconds / state->frameNumber : 0.0,
              state->vsync ? "vsync" : state->tearing ? "tearing allowed (--tearing)" : "no vsync, no tearing");
         if (state->cpuTimedFrames > 0)

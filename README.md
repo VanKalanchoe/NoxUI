@@ -178,7 +178,9 @@ Open **`build\NoxUI.slnx`** in **JetBrains Rider** (or Visual Studio 2026) and b
 ### 3. `UIDemo` CLI Flags
 `UIDemo` defaults to the no-GPU backend (`NRI_GRAPHICS_API_NONE`); pass `--vk` (Vulkan) or `--dx12` / `--d3d12` (Direct3D 12) to run on a hardware GPU backend. VSync is off by default (`--vsync` enables it); without vsync Vulkan presents MAILBOX and D3D12 `Present(0, 0)` -- no tearing, and
 in a window D3D12 then waits for the desktop compositor (the monitor's rate) -- and `--tearing` shows frames as they finish (Vulkan
-IMMEDIATE, D3D12 `DXGI_PRESENT_ALLOW_TEARING`):
+IMMEDIATE, D3D12 `DXGI_PRESENT_ALLOW_TEARING`). In a window D3D12 stays at the monitor's rate even with `--tearing` (the desktop
+composes the window); `--fullscreen` (or F11 at any time) makes the window borderless fullscreen, and covering the monitor the swapchain
+is flipped straight to the display -- with `--tearing` frames are then shown as they finish:
 ```bat
 build\Debug\UIDemo.exe --frames 10
 build\Debug\UIDemo.exe --vk --frames 10 --resize-test
@@ -192,6 +194,7 @@ build\Release\UIDemo.exe --vk --trace-ui-changes trace.txt  :: log the elements 
 build\Release\UIDemo.exe --vk --no-ui-cache                 :: draw the UI on the GPU every frame (no cached texture)
 build\Release\UIDemo.exe --vk --no-partial                  :: drawn frames lay out and paint everything (no layout / paint cache)
 build\Release\UIDemo.exe --vk --no-partial-redraw           :: the UI cache is redrawn in full (not only the dirty rects)
+build\Release\UIDemo.exe --dx12 --fullscreen --tearing        :: borderless fullscreen, frames shown as they finish (F11 toggles)
 build\Release\UIDemo.exe --vk --verify-ui-cache --fixed-clock :: compare every partial redraw with drawing everything (slow; test)
 ```
 The telemetry splits its readouts by kind of frame (an average over a mix jumps): UI CPU on drawn and on idle frames, GPU time of frames
