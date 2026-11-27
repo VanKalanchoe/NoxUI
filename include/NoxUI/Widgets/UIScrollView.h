@@ -33,6 +33,8 @@ namespace NoxUI
     private:
         UIScrollBar m_ScrollBar;
         float m_ContentHeight = 0.0f;
+        float m_PrevContentHeight = 0.0f;
         float m_ViewportHeight = 0.0f;
+        bool m_UserScrolled = false;
     };
 }

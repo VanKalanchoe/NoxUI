@@ -139,6 +139,9 @@ namespace NoxUI
         void ClearPanels();
         bool SaveLayout(const std::filesystem::path& path) const;
         bool LoadLayout(const std::filesystem::path& path);
+        // Incremented on every user layout mutation (dock, float, close, split resize, tab switch) for auto-save.
+        uint64_t GetLayoutVersion() const { return m_LayoutVersion; }
+        void MarkLayoutDirty() { ++m_LayoutVersion; }
 
         UIElement* HitTest(const UIVec2& pos) override;
         UICursorShape GetCursorShape(const UIVec2& pos) const override;
@@ -198,6 +201,7 @@ namespace NoxUI
 
         UIDockNode* m_DraggingSplitter = nullptr;
         UIDockNode* m_HoveredSplitter = nullptr;
+        uint64_t m_LayoutVersion = 0;
         bool m_ExternalDragActive = false;
         UIDockDropZone m_HoverDropZone = UIDockDropZone::None;
         Ref<UIDockNode> m_HoverTargetNode;

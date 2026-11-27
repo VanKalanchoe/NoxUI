@@ -166,6 +166,10 @@ namespace NoxUI
     void UIDockSpace::HookTabPanel(const Ref<UITabPanel>& tabPanel)
     {
         UITabPanel* rawPanel = tabPanel.get();
+        tabPanel->OnActiveTabChanged = [this](size_t)
+        {
+            MarkLayoutDirty();
+        };
         tabPanel->OnTabDragOut = [this, rawPanel](size_t tabIdx, UIVec2 pointerPos)
         {
             if (tabIdx >= rawPanel->GetTabCount())
@@ -327,6 +331,7 @@ namespace NoxUI
             else
             {
                 ClearDockPreview();
+                MarkLayoutDirty();
             }
             m_ActiveDragTitle.clear();
             m_ActiveDragDesiredSize = { 0.0f, 0.0f };
@@ -340,7 +345,10 @@ namespace NoxUI
         m_FloatHost->RemoveChild(win);
         auto it = std::find(m_FloatingWindows.begin(), m_FloatingWindows.end(), win);
         if (it != m_FloatingWindows.end())
+        {
             m_FloatingWindows.erase(it);
+            MarkLayoutDirty();
+        }
     }
 
     Ref<UIWindow> UIDockSpace::FloatPanel(
@@ -378,6 +386,7 @@ namespace NoxUI
         HookFloatingWindow(win);
         m_FloatHost->AddChild(win);
         m_FloatingWindows.push_back(win);
+        MarkLayoutDirty();
 
         if (startDrag)
         {
@@ -436,6 +445,7 @@ namespace NoxUI
     {
         if (content)
             content->Visible = true;
+        MarkLayoutDirty();
 
         const UIDockNodeFlags knownFlags = m_PanelFlags.contains(title) ? m_PanelFlags.at(title) : UIDockNodeFlags::None;
         auto applyLeafFlags = [knownFlags](const Ref<UIDockNode>& leaf)
@@ -632,6 +642,8 @@ namespace NoxUI
                 break;
             }
         }
+        if (removed)
+            MarkLayoutDirty();
         return removed;
     }
 
@@ -995,6 +1007,7 @@ namespace NoxUI
         {
             m_DraggingSplitter = nullptr;
             m_HoveredSplitter = HitTestSplitter(m_RootNode.get(), e.Position);
+            MarkLayoutDirty();
             return true;
         }
         return false;

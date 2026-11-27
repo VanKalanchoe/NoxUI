@@ -62,7 +62,7 @@ namespace NoxUI
     public:
         using Cond = std::function<bool()>;
 
-        UIPropertyRows(Ref<UIStackBox> body, UIContext* context);
+        UIPropertyRows(Ref<UIStackBox> body, UIContext* context, Ref<UIElement> card = nullptr);
 
         // A collapsible card (its open state kept in `expanded` by title, so a rebuild keeps it); its rows go into the returned builder.
         UIPropertyRows Section(const std::string& title, bool openByDefault, std::unordered_map<std::string, bool>* expanded,
@@ -105,10 +105,13 @@ namespace NoxUI
         static Ref<UIDragScalar> SliderField(float value, float min, float max, std::function<void(float)> onChanged);
 
         const Ref<UIStackBox>& GetBody() const { return m_Body; }
+        // The outer collapsible card for a Section() (use this with ShowWhen, not GetBody(), so the header and chevron stay in sync).
+        Ref<UIElement> GetCard() const { return m_Card ? m_Card : Ref<UIElement>(m_Body); }
         UIContext* GetContext() const { return m_Context; }
 
     private:
         Ref<UIStackBox> m_Body;
+        Ref<UIElement> m_Card;
         UIContext* m_Context = nullptr;
     };
 }

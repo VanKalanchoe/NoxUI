@@ -90,7 +90,7 @@ namespace NoxUI
             return;
 
         if (!Title.empty())
-            drawList.AddText(Title, font, { b.Min.x + Padding.Left, b.Min.y + Padding.Top - 2.0f }, 12.5f, { 0.80f, 0.85f, 0.92f, 1.0f });
+            drawList.AddText(Title, font, { b.Min.x + Padding.Left, b.Min.y + Padding.Top - 2.0f }, 13.5f, { 0.80f, 0.85f, 0.92f, 1.0f });
 
         // Subtle horizontal gridlines (25%, 50%, 75%)
         for (int g = 1; g <= 3; ++g)
@@ -180,7 +180,7 @@ namespace NoxUI
 
             char buf[32]{};
             std::snprintf(buf, sizeof(buf), "%.2f", m_Values[m_HoveredIndex]);
-            drawList.AddText(buf, font, { plotRect.Max.x - 48.0f, b.Min.y + Padding.Top - 2.0f }, 12.5f, { 1.0f, 0.88f, 0.35f, 1.0f });
+            drawList.AddText(buf, font, { plotRect.Max.x - 48.0f, b.Min.y + Padding.Top - 2.0f }, 13.5f, { 1.0f, 0.88f, 0.35f, 1.0f });
         }
     }
 

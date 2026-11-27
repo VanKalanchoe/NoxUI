@@ -289,8 +289,11 @@ namespace NoxUI
     {
         if (index >= m_Tabs.size())
             return;
+        const bool changed = (m_ActiveIndex != index);
         m_ActiveIndex = index;
         RefreshTabStyles();
+        if (changed && OnActiveTabChanged)
+            OnActiveTabChanged(m_ActiveIndex);
     }
 
     const std::string& UITabPanel::GetTabTitle(size_t index) const

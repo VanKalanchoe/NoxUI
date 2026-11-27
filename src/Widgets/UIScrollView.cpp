@@ -40,7 +40,10 @@ namespace NoxUI
     bool UIScrollView::OnPointerMove(const UIPointerEvent& e)
     {
         if (m_ScrollBar.OnPointerMove(e.Position, ScrollOffsetY))
+        {
+            m_UserScrolled = true;
             return true;
+        }
         return UIElement::OnPointerMove(e);
     }
 
@@ -61,6 +64,7 @@ namespace NoxUI
         if (next == ScrollOffsetY)
             return false; // at the end: an outer scroll view takes the wheel
         ScrollOffsetY = next;
+        m_UserScrolled = true;
         m_ScrollBar.NotifyScrolled();
         return true;
     }
@@ -127,21 +131,75 @@ namespace NoxUI
         ScrollOffsetY = std::clamp(ScrollOffsetY, 0.0f, maxScroll);
         m_ScrollBar.SetGeometry(GetBounds(), m_ContentHeight, m_ViewportHeight);
 
-        float cursorY = contentRect.Min.y - ScrollOffsetY;
-        for (const auto& child : GetChildren())
+        auto isDescendant = [this](const UIElement* el) -> bool
         {
-            if (!child->Visible)
-                continue;
+            for (const UIElement* p = el ? el->GetParent() : nullptr; p != nullptr; p = p->GetParent())
+            {
+                if (p == this)
+                    return true;
+            }
+            return false;
+        };
 
-            const float cw = std::max(0.0f, availW - child->Margin.Horizontal());
-            const float ch = child->HeightForWidth(cw);
-            const UIRect slot{
-                { contentRect.Min.x + child->Margin.Left, cursorY + child->Margin.Top },
-                { contentRect.Min.x + availW - child->Margin.Right, cursorY + child->Margin.Top + ch }
-            };
-            child->Arrange(slot);
-            cursorY += ch + child->Margin.Vertical() + ChildSpacing;
+        // Scroll anchoring: when dynamic rows above the hovered/focused control appear or collapse
+        // (e.g., toggling Ray Tracing Shadows), keep the control pinned at its current screen Y.
+        UIElement* anchor = nullptr;
+        float oldAnchorY = 0.0f;
+        if (!m_UserScrolled && m_PrevContentHeight > 0.5f && std::abs(m_ContentHeight - m_PrevContentHeight) > 0.5f)
+        {
+            if (const UIContext* ctx = UIContext::GetCurrent())
+            {
+                auto pickAnchor = [&](UIElement* candidate) -> UIElement*
+                {
+                    if (candidate && candidate->Visible && isDescendant(candidate) && candidate->GetBounds().Height() > 0.5f)
+                        return candidate;
+                    return nullptr;
+                };
+                anchor = pickAnchor(ctx->GetHovered());
+                if (!anchor)
+                    anchor = pickAnchor(ctx->GetFocused());
+                if (anchor)
+                    oldAnchorY = anchor->GetBounds().Min.y;
+            }
         }
+
+        auto layoutPass = [&]()
+        {
+            float cursorY = contentRect.Min.y - ScrollOffsetY;
+            for (const auto& child : GetChildren())
+            {
+                if (!child->Visible)
+                    continue;
+
+                const float cw = std::max(0.0f, availW - child->Margin.Horizontal());
+                const float ch = child->HeightForWidth(cw);
+                const UIRect slot{
+                    { contentRect.Min.x + child->Margin.Left, cursorY + child->Margin.Top },
+                    { contentRect.Min.x + availW - child->Margin.Right, cursorY + child->Margin.Top + ch }
+                };
+                child->Arrange(slot);
+                cursorY += ch + child->Margin.Vertical() + ChildSpacing;
+            }
+        };
+
+        layoutPass();
+
+        if (anchor && anchor->Visible)
+        {
+            const float deltaY = anchor->GetBounds().Min.y - oldAnchorY;
+            if (std::abs(deltaY) > 0.5f)
+            {
+                const float adjusted = std::clamp(ScrollOffsetY + deltaY, 0.0f, maxScroll);
+                if (std::abs(adjusted - ScrollOffsetY) > 0.5f)
+                {
+                    ScrollOffsetY = adjusted;
+                    layoutPass();
+                }
+            }
+        }
+
+        m_PrevContentHeight = m_ContentHeight;
+        m_UserScrolled = false;
     }
 
     UIRect UIScrollView::GetChildClipRect() const

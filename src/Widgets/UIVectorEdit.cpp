@@ -27,11 +27,12 @@ namespace NoxUI
 
         for (int i = 0; i < m_Components; ++i)
         {
-            // Unreal's look: the axis is a thin coloured edge on the field, not a lettered tag that takes a fifth of its width --
-            // the number gets the room (three fields share an inspector row). The letter is in the tooltip.
             auto scalar = Ref<UIDragScalar>(new UIDragScalar(initialValue[i], speed));
-            scalar->Stripe = kColors[i];
-            scalar->Tooltip = std::string(kPrefixes[i]) + " -- drag to change, click to type";
+            scalar->Prefix = kPrefixes[i];
+            scalar->PrefixColor = kColors[i];
+            scalar->DefaultValue = 0.0f;
+            scalar->ResetOnPrefixClick = true;
+            scalar->Tooltip = std::string(kPrefixes[i]) + ": drag to scrub, click to type, click " + kPrefixes[i] + " to reset";
             scalar->FontSize = 15.0f;
             scalar->Format = "{:.3f}";
             scalar->TrimZeros = true;
@@ -44,6 +45,15 @@ namespace NoxUI
             };
             m_Axes[i] = scalar;
             AddChild(scalar);
+        }
+    }
+
+    void UIVectorEdit::SetDefaultValue(const glm::vec4& defaults)
+    {
+        for (int i = 0; i < m_Components; ++i)
+        {
+            if (m_Axes[i])
+                m_Axes[i]->DefaultValue = defaults[i];
         }
     }
 

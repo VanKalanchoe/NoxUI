@@ -166,8 +166,8 @@ namespace NoxUI
             }
 
             const std::type_info& StateHashClass() const override { return typeid(UIMenuRow); }
-            UIMenuRow(const UIMenuItem& item, UIContext* context, UIMenuHostBase* host, int depth)
-                : UIStackBox(UIOrientation::Horizontal, 14.0f)
+            UIMenuRow(const UIMenuItem& item, UIContext* context, UIMenuHostBase* host, int depth, bool reserveCheckColumn, bool reserveSubmenuColumn)
+                : UIStackBox(UIOrientation::Horizontal, 24.0f)
                 , m_Context(context)
                 , m_Host(host)
                 , m_Depth(depth)
@@ -181,13 +181,13 @@ namespace NoxUI
                 HitTestMode = UIHitTestMode::Self;
                 WidthMode = UISizeMode::Fill;
                 HeightMode = UISizeMode::Auto;
+                MinSize = { 0.0f, 28.0f };
                 Tooltip = item.Tooltip;
                 SetEnabled(item.Enabled);
 
-                if (m_Checked)
-                    Padding = { 24.0f, Padding.Top, m_HasSubmenu ? 22.0f : Padding.Right, Padding.Bottom };
-                else if (m_HasSubmenu)
-                    Padding = { Padding.Left, Padding.Top, 22.0f, Padding.Bottom };
+                const float padLeft = reserveCheckColumn ? 28.0f : 12.0f;
+                const float padRight = (m_HasSubmenu || reserveSubmenuColumn) ? 26.0f : 12.0f;
+                Padding = { padLeft, 6.0f, padRight, 6.0f };
 
                 m_TitleLabel = Ref<UILabel>(new UILabel(item.Label));
                 m_TitleLabel->WidthMode = UISizeMode::Fill;
@@ -263,17 +263,19 @@ namespace NoxUI
                 const float cy = (b.Min.y + b.Max.y) * 0.5f;
                 if (m_Checked)
                 {
-                    const UIColor accent = theme.GetToken("Accent", style.TextColor);
-                    const UIVec2 cMin{ b.Min.x + 6.0f, cy - 6.0f };
-                    const UIVec2 cMax{ b.Min.x + 18.0f, cy + 6.0f };
-                    Icons::DrawCheckmark(drawList, cMin, cMax, accent, 1.7f);
+                    const UIColor checkCol = HasState(GetState(), UIState::Hovered)
+                        ? style.TextColor
+                        : theme.GetToken("Accent", style.TextColor);
+                    const UIVec2 cMin{ b.Min.x + 8.0f, cy - 5.5f };
+                    const UIVec2 cMax{ b.Min.x + 19.0f, cy + 5.5f };
+                    Icons::DrawCheckmark(drawList, cMin, cMax, checkCol, 1.8f);
                 }
                 if (m_HasSubmenu)
                 {
                     const UIColor chevronCol = HasState(GetState(), UIState::Hovered)
                         ? style.TextColor
                         : theme.GetToken("TextMuted", style.TextColor);
-                    Icons::DrawChevron(drawList, { b.Max.x - 10.0f, cy }, 6.5f, false, chevronCol, 1.5f);
+                    Icons::DrawChevron(drawList, { b.Max.x - 12.0f, cy }, 6.5f, false, chevronCol, 1.6f);
                 }
             }
 
@@ -397,8 +399,8 @@ namespace NoxUI
         DrawBackground = true;
         HitTestMode = UIHitTestMode::Self;
         WidthMode = UISizeMode::Auto;
-        MinSize.x = 180.0f;
-        Padding = UIThickness::All(6.0f);
+        MinSize.x = 200.0f;
+        Padding = UIThickness::Symmetric(4.0f, 5.0f);
 
         m_ScrollView = Ref<UIScrollView>(new UIScrollView());
         m_ScrollView->WidthMode = UISizeMode::Fill;
@@ -406,6 +408,18 @@ namespace NoxUI
         m_ScrollView->ChildSpacing = 2.0f;
 
         auto* hostBase = dynamic_cast<UIMenuHostBase*>(host);
+
+        bool anyChecked = false;
+        bool anySubmenu = false;
+        for (const auto& item : items)
+        {
+            if (item.IsSeparator || item.IsInfo)
+                continue;
+            if (item.Checked)
+                anyChecked = true;
+            if (!item.SubItems.empty())
+                anySubmenu = true;
+        }
 
         for (const auto& item : items)
         {
@@ -416,7 +430,7 @@ namespace NoxUI
                 sep->DrawBackground = true;
                 sep->HeightMode = UISizeMode::Fixed;
                 sep->FixedSize.y = 1.0f;
-                sep->Margin = UIThickness::Symmetric(4.0f, 3.0f);
+                sep->Margin = UIThickness::Symmetric(6.0f, 4.0f);
                 m_ScrollView->AddChild(sep);
                 continue;
             }
@@ -426,12 +440,12 @@ namespace NoxUI
                 Ref<UILabel> info(new UILabel(item.Label));
                 info->UseColorOverride = true;
                 info->ColorOverride = { 0.58f, 0.62f, 0.69f, 1.0f };
-                info->Margin = UIThickness::Symmetric(10.0f, 4.0f);
+                info->Margin = UIThickness::Symmetric(anyChecked ? 28.0f : 12.0f, 4.0f);
                 m_ScrollView->AddChild(info);
                 continue;
             }
 
-            m_ScrollView->AddChild(Ref<UIMenuRow>(new UIMenuRow(item, context, hostBase, depth)));
+            m_ScrollView->AddChild(Ref<UIMenuRow>(new UIMenuRow(item, context, hostBase, depth, anyChecked, anySubmenu)));
         }
 
         AddChild(m_ScrollView);
@@ -483,6 +497,7 @@ namespace NoxUI
     {
         Ref<UIMenuTriggerButton> trigger(new UIMenuTriggerButton(title));
         trigger->StyleClass = "MenuTrigger";
+        trigger->Padding = UIThickness::Symmetric(10.0f, 5.0f);
         trigger->VAlign = UIAlignment::Center;
         UIMenuTriggerButton* triggerPtr = trigger.get();
 

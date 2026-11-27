@@ -31,6 +31,10 @@ namespace NoxUI
         UIColor Stripe{ 0.0f, 0.0f, 0.0f, 0.0f }; // a thin coloured bar at the left edge (a colour's R / G / B fields)
         std::string Prefix;
         UIColor PrefixColor{ 0.24f, 0.56f, 0.96f, 1.0f };
+        float DefaultValue = 0.0f;
+        // Clicking the coloured Prefix pill resets Value to DefaultValue (or calls OnPrefixClick when set).
+        bool ResetOnPrefixClick = false;
+        std::function<void()> OnPrefixClick;
         std::string Format = "{:.2f}";
         // Unreal's way of showing a number: Format's decimals at most, the trailing zeros dropped but one ("120.5", "0.0").
         bool TrimZeros = false;
@@ -47,6 +51,7 @@ namespace NoxUI
         bool OnPointerDown(const UIPointerEvent& e) override;
         bool OnPointerMove(const UIPointerEvent& e) override;
         bool OnPointerUp(const UIPointerEvent& e) override;
+        bool OnPointerLeave(const UIPointerEvent& e) override;
         bool OnKeyDown(const UIKeyEvent& e) override;
         bool OnTextInput(std::string_view text) override;
         void OnFocusChanged(bool focused) override;
@@ -60,11 +65,14 @@ namespace NoxUI
         void BeginEdit();
         void CommitEdit(bool apply = true);
         void SetValue(float next);
+        float PrefixWidth() const;
+        bool IsOverPrefix(const UIVec2& pos) const;
         float TextLeft() const;
         float TextSize() const;
         std::string DisplayText() const;
         bool HasRange() const { return Max > Min; }
 
+        bool m_HoverPrefix = false;
         bool m_Pressed = false;   // the left button went down on the field (not while editing)
         bool m_Scrubbing = false; // ... and moved far enough: the value is being dragged
         float m_PressX = 0.0f;

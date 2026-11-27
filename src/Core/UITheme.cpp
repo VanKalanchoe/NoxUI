@@ -416,8 +416,8 @@ namespace NoxUI
         menuTrigger.FillColor = { 0.0f, 0.0f, 0.0f, 0.0f };
         menuTrigger.FillColorBottom = menuTrigger.FillColor;
         menuTrigger.BorderThickness = 0.0f;
-        menuTrigger.CornerRadius = UICornerRadius::All(2.0f);
-        menuTrigger.Padding = UIThickness::Symmetric(10.0f, 4.0f);
+        menuTrigger.CornerRadius = UICornerRadius::All(4.0f);
+        menuTrigger.Padding = UIThickness::Symmetric(10.0f, 5.0f);
         menuTrigger.TextColor = theme->GetToken("Text");
         menuTrigger.FontSize = 18.0f;
         menuTrigger.TransitionSeconds = 0.04f;
@@ -437,8 +437,8 @@ namespace NoxUI
         menuPopup.ShadowColor = { 0.0f, 0.0f, 0.0f, 0.55f };
         menuPopup.ShadowOffset = { 0.0f, 6.0f };
         menuPopup.ShadowBlur = 14.0f;
-        menuPopup.CornerRadius = UICornerRadius::All(3.0f);
-        menuPopup.Padding = UIThickness::All(4.0f);
+        menuPopup.CornerRadius = UICornerRadius::All(5.0f);
+        menuPopup.Padding = UIThickness::Symmetric(4.0f, 5.0f);
         menuPopup.TextColor = theme->GetToken("Text");
         menuPopup.FontSize = 18.0f;
         theme->SetStyle("MenuPopup", menuPopup);
@@ -447,10 +447,10 @@ namespace NoxUI
         menuItem.FillColor = { 0.0f, 0.0f, 0.0f, 0.0f };
         menuItem.FillColorBottom = menuItem.FillColor;
         menuItem.BorderThickness = 0.0f;
-        menuItem.CornerRadius = UICornerRadius::All(2.0f);
-        menuItem.Padding = UIThickness::Symmetric(10.0f, 5.0f);
+        menuItem.CornerRadius = UICornerRadius::All(4.0f);
+        menuItem.Padding = UIThickness::Symmetric(12.0f, 6.0f);
         menuItem.TextColor = theme->GetToken("Text");
-        menuItem.FontSize = 18.0f;
+        menuItem.FontSize = 16.0f;
         menuItem.TransitionSeconds = 0.03f;
         theme->SetStyle("MenuItem", menuItem);
 

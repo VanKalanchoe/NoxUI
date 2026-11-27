@@ -57,7 +57,7 @@ namespace NoxUI
                 }
                 box->AddChild(editor);
             }
-            Ref<UILabel> reason = ColoredLabel("", 12.5f, Token(context, "PropertyReason", { 0.85f, 0.66f, 0.36f, 1.0f }));
+            Ref<UILabel> reason = ColoredLabel("", 13.5f, Token(context, "PropertyReason", { 0.85f, 0.66f, 0.36f, 1.0f }));
             reason->StyleClass = kReasonClass;
             reason->VAlign = UIAlignment::Center;
             reason->Visible = false;
@@ -238,8 +238,8 @@ namespace NoxUI
         return { card, body };
     }
 
-    UIPropertyRows::UIPropertyRows(Ref<UIStackBox> body, UIContext* context)
-        : m_Body(std::move(body)), m_Context(context)
+    UIPropertyRows::UIPropertyRows(Ref<UIStackBox> body, UIContext* context, Ref<UIElement> card)
+        : m_Body(std::move(body)), m_Card(std::move(card)), m_Context(context)
     {
     }
 
@@ -290,7 +290,7 @@ namespace NoxUI
         if (!tooltip.empty())
             card.Card->Tooltip = tooltip;
         m_Body->AddChild(card.Card);
-        return UIPropertyRows(card.Body, m_Context);
+        return UIPropertyRows(card.Body, m_Context, card.Card);
     }
 
     UIPropertyRows UIPropertyRows::Group()
@@ -444,7 +444,7 @@ namespace NoxUI
 
     Ref<UIElement> UIPropertyRows::Text(std::function<std::string()> text, const glm::vec4& color)
     {
-        Ref<UILabel> label = ColoredLabel(text ? text() : std::string(), 13.5f, color);
+        Ref<UILabel> label = ColoredLabel(text ? text() : std::string(), 14.0f, color);
         label->WordWrap = true;
         label->WidthMode = UISizeMode::Fill;
         m_Body->AddChild(label);
@@ -462,7 +462,7 @@ namespace NoxUI
 
     Ref<UIElement> UIPropertyRows::Note(const std::string& text, const glm::vec4& color)
     {
-        Ref<UILabel> label = ColoredLabel(text, 13.5f, color);
+        Ref<UILabel> label = ColoredLabel(text, 14.0f, color);
         label->WordWrap = true;
         label->WidthMode = UISizeMode::Fill;
         m_Body->AddChild(label);
@@ -481,7 +481,7 @@ namespace NoxUI
 
     Ref<UIElement> UIPropertyRows::Header(const std::string& title, const std::string& tooltip)
     {
-        Ref<UILabel> label = ColoredLabel(title, 14.5f, Token(m_Context, "PropertySubheader", { 0.78f, 0.84f, 0.93f, 1.0f }));
+        Ref<UILabel> label = ColoredLabel(title, 15.5f, Token(m_Context, "PropertySubheader", { 0.78f, 0.84f, 0.93f, 1.0f }));
         label->Margin = UIThickness{ 0.0f, 6.0f, 0.0f, 2.0f };
         if (!tooltip.empty())
             label->Tooltip = tooltip;

@@ -22,6 +22,7 @@ namespace NoxUI
             std::function<void(const glm::vec4&)> onChanged = {});
 
         void SetValue(const glm::vec4& value, bool notify = false);
+        void SetDefaultValue(const glm::vec4& defaults);
         void SetSpeed(float speed);
         void SetFormat(const std::string& format);
         glm::vec4 GetValue() const;

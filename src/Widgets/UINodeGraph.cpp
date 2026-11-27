@@ -490,7 +490,7 @@ namespace NoxUI
 
         // Nodes
         const UIColor borderDefault = theme.GetToken("Border", { 0.22f, 0.25f, 0.33f, 0.9f });
-        const float fontSize = 13.0f * m_Zoom;
+        const float fontSize = 14.0f * m_Zoom;
         const float titleSize = 14.0f * m_Zoom;
 
         for (const auto& node : m_Nodes)
@@ -510,7 +510,7 @@ namespace NoxUI
                 selected ? accent : borderDefault,
                 { 0.0f, 0.0f, 0.0f, 0.45f },
                 { 0.0f, 4.0f * m_Zoom },
-                12.0f * m_Zoom
+                13.0f * m_Zoom
             );
 
             // Header bar

@@ -40,6 +40,8 @@ namespace NoxUI
 
         // Fired when a tab is dragged past the tear-out threshold while pressed.
         std::function<void(size_t index, UIVec2 pointerPos)> OnTabDragOut;
+        // Fired when the active tab changes.
+        std::function<void(size_t index)> OnActiveTabChanged;
 
     protected:
         void ArrangeChildren(const UIRect& contentRect) override;

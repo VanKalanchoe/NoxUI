@@ -65,15 +65,30 @@ namespace NoxUI
         return FontSize > 0.0f ? FontSize : GetResolvedStyle().FontSize;
     }
 
+    float UIDragScalar::PrefixWidth() const
+    {
+        if (Prefix.empty())
+            return 0.0f;
+        const float fontSize = std::max(12.0f, TextSize() - 1.0f);
+        const UIVec2 pSize = UILabel::MeasureText(Prefix, nullptr, fontSize);
+        return std::max(19.0f, pSize.x + 10.0f);
+    }
+
+    bool UIDragScalar::IsOverPrefix(const UIVec2& pos) const
+    {
+        if (Prefix.empty())
+            return false;
+        const UIRect& b = GetBounds();
+        return b.Contains(pos) && pos.x <= b.Min.x + PrefixWidth();
+    }
+
     float UIDragScalar::TextLeft() const
     {
         const UIStyleBox& style = GetResolvedStyle();
         const UIRect& b = GetBounds();
         if (Prefix.empty())
             return b.Min.x + style.Padding.Left + (Stripe.a > 0.0f ? 3.0f : 0.0f);
-        const UIVec2 pSize = UILabel::MeasureText(Prefix, nullptr, TextSize());
-        const float tagW = std::max(TextSize() * 1.25f, pSize.x + style.Padding.Left * 1.4f);
-        return b.Min.x + tagW + 6.0f;
+        return b.Min.x + PrefixWidth() + 5.0f;
     }
 
     void UIDragScalar::BeginEdit()
@@ -130,15 +145,36 @@ namespace NoxUI
             CommitEdit(true);
     }
 
-    UICursorShape UIDragScalar::GetCursorShape(const UIVec2&) const
+    UICursorShape UIDragScalar::GetCursorShape(const UIVec2& pos) const
     {
-        return (m_Editing || !IsEnabled()) ? UICursorShape::Default : UICursorShape::ResizeEW;
+        if (m_Editing || !IsEnabled())
+            return UICursorShape::Default;
+        if ((ResetOnPrefixClick || OnPrefixClick) && IsOverPrefix(pos))
+            return UICursorShape::Default;
+        return UICursorShape::ResizeEW;
     }
 
     bool UIDragScalar::OnPointerDown(const UIPointerEvent& e)
     {
         if (e.Button != 1 || !IsEnabled())
             return UIElement::OnPointerDown(e);
+
+        if ((ResetOnPrefixClick || OnPrefixClick) && IsOverPrefix(e.Position))
+        {
+            if (m_Editing)
+                CommitEdit(false);
+            if (UIContext* ctx = UIContext::GetCurrent())
+                ctx->CancelPendingDrag();
+            if (OnPrefixClick)
+                OnPrefixClick();
+            else
+            {
+                SetValue(DefaultValue);
+                if (OnCommitted)
+                    OnCommitted(Value);
+            }
+            return true;
+        }
 
         // ImGui-style Ctrl+Click enters text editing immediately on press with all text selected.
         if (!m_Editing && (e.Modifiers & UIMod::Ctrl) != 0)
@@ -182,6 +218,7 @@ namespace NoxUI
 
     bool UIDragScalar::OnPointerMove(const UIPointerEvent& e)
     {
+        m_HoverPrefix = !m_Pressed && !m_Editing && IsEnabled() && (ResetOnPrefixClick || OnPrefixClick) && IsOverPrefix(e.Position);
         if (!m_Pressed || m_Editing || !IsEnabled())
             return UIElement::OnPointerMove(e);
 
@@ -221,6 +258,12 @@ namespace NoxUI
         if (scrubbed && OnCommitted)
             OnCommitted(Value); // (a drag ended: the value it ended at)
         return true;
+    }
+
+    bool UIDragScalar::OnPointerLeave(const UIPointerEvent& e)
+    {
+        m_HoverPrefix = false;
+        return UIElement::OnPointerLeave(e);
     }
 
     bool UIDragScalar::OnKeyDown(const UIKeyEvent& e)
@@ -383,12 +426,7 @@ namespace NoxUI
     UIVec2 UIDragScalar::ComputeDesiredSize()
     {
         const UIStyleBox& style = GetResolvedStyle();
-        float tagW = 0.0f;
-        if (!Prefix.empty())
-        {
-            const UIVec2 pSize = UILabel::MeasureText(Prefix, nullptr, TextSize());
-            tagW = std::max(TextSize() * 1.25f, pSize.x + style.Padding.Left * 1.4f) + 6.0f;
-        }
+        const float tagW = Prefix.empty() ? 0.0f : (PrefixWidth() + 5.0f);
         return {
             std::max(MinSize.x, tagW + TextSize() * 2.2f + style.Padding.Horizontal()),
             TextSize() + style.Padding.Vertical()
@@ -407,18 +445,22 @@ namespace NoxUI
 
         if (!Prefix.empty())
         {
-            const UIVec2 pSize = UILabel::MeasureText(Prefix, nullptr, TextSize());
-            const float tagW = std::max(TextSize() * 1.25f, pSize.x + style.Padding.Left * 1.4f);
+            const float tagW = PrefixWidth();
+            const float prefixFontSize = std::max(12.0f, TextSize() - 1.0f);
+            const UIVec2 pSize = UILabel::MeasureText(Prefix, nullptr, prefixFontSize);
+            const UIColor pillColor = (m_HoverPrefix && IsEnabled())
+                ? glm::mix(PrefixColor, UIColor{ 1.0f, 1.0f, 1.0f, 1.0f }, 0.22f)
+                : PrefixColor;
             drawList.AddRoundedRect(
-                b.Min,
-                { b.Min.x + tagW, b.Max.y },
-                PrefixColor,
-                { style.CornerRadius.TopLeft, 0.0f, 0.0f, style.CornerRadius.BottomLeft }
+                { b.Min.x + 1.0f, b.Min.y + 1.0f },
+                { b.Min.x + tagW, b.Max.y - 1.0f },
+                pillColor,
+                { std::max(0.0f, style.CornerRadius.TopLeft - 1.0f), 0.0f, 0.0f, std::max(0.0f, style.CornerRadius.BottomLeft - 1.0f) }
             );
             drawList.AddText(
                 Prefix, nullptr,
-                { b.Min.x + (tagW - pSize.x) * 0.5f, b.Min.y + (b.Height() - pSize.y) * 0.5f },
-                TextSize(),
+                { b.Min.x + 0.5f + (tagW - pSize.x) * 0.5f, b.Min.y + (b.Height() - pSize.y) * 0.5f },
+                prefixFontSize,
                 { 1.0f, 1.0f, 1.0f, 1.0f }
             );
             tagRight = b.Min.x + tagW;
@@ -507,7 +549,7 @@ namespace NoxUI
     void UIDragScalar::HashState(UIStateHasher& h) const
     {
         UIElement::HashState(h);
-        h(Value, Speed, Min, Max, Step, ShowFill, FontSize, Stripe, Prefix, PrefixColor, Format, TrimZeros);
-        h(m_Pressed, m_Scrubbing, m_PressX, m_ScrubValue, m_Editing, m_SelectAll, m_EditText, m_Cursor, m_BlinkTimer);
+        h(Value, Speed, Min, Max, Step, ShowFill, FontSize, Stripe, Prefix, PrefixColor, DefaultValue, ResetOnPrefixClick, Format, TrimZeros);
+        h(m_HoverPrefix, m_Pressed, m_Scrubbing, m_PressX, m_ScrubValue, m_Editing, m_SelectAll, m_EditText, m_Cursor, m_BlinkTimer);
     }
 }
