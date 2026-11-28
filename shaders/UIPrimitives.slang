@@ -94,6 +94,15 @@ UIClipRect loadClipRect(UIPushConstants pc, uint index)
 #endif
 }
 
+Texture2D loadUITexture(uint slot)
+{
+#ifdef NOX_VULKAN
+    return Texture2D.Handle(uint2(slot, 0));
+#else
+    return Texture2D.Handle(uint2(NonUniformResourceIndex(slot), 0));
+#endif
+}
+
 struct UIVSOutput
 {
     float4 pos : SV_Position;
@@ -285,7 +294,7 @@ float4 fragMain(UIVSOutput input, uniform UIPushConstants pc) : SV_TARGET0
     }
     else if (prim.type == uint(UIPrimitiveType.UI_PRIM_TEXTURED_QUAD))
     {
-        Texture2D tex = Texture2D.Handle(uint2(pc.imageHeapIndexOffset + prim.textureIndex, 0));
+        Texture2D tex = loadUITexture(pc.imageHeapIndexOffset + prim.textureIndex);
         SamplerState samp = SamplerState.Handle(uint2(pc.samplerSlot, 0));
         float4 sampled = tex.Sample(samp, input.uv) * prim.color0;
 
@@ -298,7 +307,7 @@ float4 fragMain(UIVSOutput input, uniform UIPushConstants pc) : SV_TARGET0
     }
     else if (prim.type == uint(UIPrimitiveType.UI_PRIM_MSDF_GLYPH))
     {
-        Texture2D atlas = Texture2D.Handle(uint2(pc.imageHeapIndexOffset + prim.textureIndex, 0));
+        Texture2D atlas = loadUITexture(pc.imageHeapIndexOffset + prim.textureIndex);
         SamplerState samp = SamplerState.Handle(uint2(pc.samplerSlot, 0));
         const float3 msd = atlas.Sample(samp, input.uv).rgb;
         const float sd = median3(msd.r, msd.g, msd.b);
@@ -309,7 +318,7 @@ float4 fragMain(UIVSOutput input, uniform UIPushConstants pc) : SV_TARGET0
     else if (prim.type == uint(UIPrimitiveType.UI_PRIM_GLYPH_BITMAP))
     {
         // The glyph rasterized at this size and pen offset, its quad on whole pixels: each pixel reads its own texel's coverage.
-        Texture2D atlas = Texture2D.Handle(uint2(pc.imageHeapIndexOffset + prim.textureIndex, 0));
+        Texture2D atlas = loadUITexture(pc.imageHeapIndexOffset + prim.textureIndex);
         SamplerState samp = SamplerState.Handle(uint2(pc.samplerSlot, 0));
         const float coverage = atlas.Sample(samp, input.uv).r;
         outColor = float4(prim.color0.rgb, prim.color0.a * coverage);
